@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Helm Marine Navigation</string>
+    <string name="title_activity_main">Helm Marine Navigation</string>
+    <string name="package_name">com.helm.marine</string>
+    <string name="custom_url_scheme">com.helm.marine</string>
+</resources>

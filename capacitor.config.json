@@ -1,0 +1,10 @@
+{
+  "appId": "com.helm.marine",
+  "appName": "Helm Marine Navigation",
+  "webDir": "dist",
+  "plugins": {
+    "Geolocation": {
+      "enableHighAccuracy": true
+    }
+  }
+}
