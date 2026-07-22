@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import './layer-fix.css'
+import './heading.css'
 
 const DEMO_POSITION = [27.6448, -82.5691]
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -25,9 +26,22 @@ function Navigator() {
   const [mode, setMode] = useState(null)
   const [activeDestination, setActiveDestination] = useState(null)
   const [notice, setNotice] = useState('Ready to navigate')
+  const [heading, setHeading] = useState(0)
+  const [followHeading, setFollowHeading] = useState(false)
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
 
   useEffect(() => { modeRef.current = mode }, [mode])
+
+  useEffect(() => {
+    if (!followHeading) return undefined
+    const onOrientation = (event) => {
+      const next = typeof event.webkitCompassHeading === 'number' ? event.webkitCompassHeading : event.alpha == null ? null : (360 - event.alpha) % 360
+      if (next != null && Number.isFinite(next)) setHeading(next)
+    }
+    window.addEventListener('deviceorientationabsolute', onOrientation, true)
+    window.addEventListener('deviceorientation', onOrientation, true)
+    return () => { window.removeEventListener('deviceorientationabsolute', onOrientation, true); window.removeEventListener('deviceorientation', onOrientation, true) }
+  }, [followHeading])
 
   useEffect(() => { store('markers', markers) }, [markers])
   useEffect(() => { store('destinations', destinations) }, [destinations])
@@ -119,6 +133,14 @@ function Navigator() {
     setTimeout(finish, 8000)
   }
 
+  async function toggleHeading() {
+    if (followHeading) { setFollowHeading(false); setNotice('North-up map'); return }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') { setNotice('Compass permission was denied'); return } } catch { setNotice('Compass permission was denied'); return }
+    }
+    setFollowHeading(true); setNotice('Following your compass heading')
+  }
+
   function savePoint() {
     if (!draft.name.trim()) { setNotice('Give this location a name'); return }
     const coords = draft.coords || position
@@ -145,7 +167,7 @@ function Navigator() {
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button></div></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
     </aside>
-    <section className="map-area"><div ref={mapNode} className={mode ? 'map picking' : 'map'}></div><div className="map-top"><div><span className="map-label">SATELLITE / CHART</span><p>Live marine overview</p></div><button onClick={() => setMode('marker')}>＋ Add spot</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div></section>
+    <section className="map-area"><div ref={mapNode} style={{ '--map-rotation': followHeading ? `${-heading}deg` : '0deg' }} className={`${mode ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}></div><div className="map-top"><div><span className="map-label">SATELLITE / CHART</span><p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : 'Live marine overview'}</p></div><button onClick={() => setMode('marker')}>＋ Add spot</button><button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div></section>
     {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location — or click the chart to choose one.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
   </main>
 }

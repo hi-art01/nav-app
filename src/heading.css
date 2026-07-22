@@ -1,0 +1,4 @@
+.map.heading-active { transform: rotate(var(--map-rotation)) scale(1.12); transform-origin: center; }
+.heading-button { background: #12383b; color: #b9d7d4; border: 1px solid #426266; padding: 11px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.heading-button.active { background: #45d9b6; color: #06221f; border-color: #45d9b6; }
+@media (max-width: 720px) { .map-top { flex-wrap: wrap; } }
