@@ -1,0 +1,4 @@
+/* Keep Leaflet's high-z-index panes inside the map column. */
+.sidebar { position: relative; z-index: 10; }
+.map-area { position: relative; z-index: 1; overflow: hidden; }
+.leaflet-container { z-index: 0; }

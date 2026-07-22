@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import './layer-fix.css'
 
 const DEMO_POSITION = [27.6448, -82.5691]
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -11,12 +12,14 @@ function Navigator() {
   const map = useRef(null)
   const modeRef = useRef(null)
   const userMarker = useRef(null)
+  const accuracyCircle = useRef(null)
   const layers = useRef([])
   const watch = useRef(null)
   const [markers, setMarkers] = useState(() => read('markers', []))
   const [destinations, setDestinations] = useState(() => read('destinations', []))
   const [trips, setTrips] = useState(() => read('trips', []))
   const [position, setPosition] = useState(DEMO_POSITION)
+  const [accuracy, setAccuracy] = useState(null)
   const [tracking, setTracking] = useState(false)
   const [depth, setDepth] = useState('')
   const [mode, setMode] = useState(null)
@@ -70,9 +73,12 @@ function Navigator() {
   function updatePosition(coords) {
     const next = [coords.latitude, coords.longitude]
     setPosition(next)
+    if (Number.isFinite(coords.accuracy)) setAccuracy(coords.accuracy)
     if (map.current && window.L) {
-      if (!userMarker.current) userMarker.current = window.L.marker(next, { icon: window.L.divIcon({ className: 'boat-pin', html: '▲' }) }).addTo(map.current)
+      if (!userMarker.current) userMarker.current = window.L.marker(next, { icon: window.L.divIcon({ className: 'boat-pin', html: '▲', iconSize: [20, 20], iconAnchor: [10, 10] }) }).addTo(map.current)
       else userMarker.current.setLatLng(next)
+      if (!accuracyCircle.current) accuracyCircle.current = window.L.circle(next, { radius: coords.accuracy || 10, color: '#58e1c4', weight: 1, fillColor: '#58e1c4', fillOpacity: 0.12 }).addTo(map.current)
+      else accuracyCircle.current.setLatLng(next).setRadius(coords.accuracy || 10)
       map.current.panTo(next)
     }
     if (tracking && activeDestination) {
@@ -95,7 +101,22 @@ function Navigator() {
   }
 
   function locate() {
-    navigator.geolocation?.getCurrentPosition((p) => updatePosition(p.coords), () => setNotice('Location permission denied — showing demo waters'), { enableHighAccuracy: true })
+    if (!navigator.geolocation) { setNotice('GPS is not supported by this browser'); return }
+    setNotice('Improving GPS fix… hold still for a few seconds')
+    let best = null
+    const finish = () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+      if (best) setNotice(`GPS fix ±${Math.round(best.accuracy || 0)} m`)
+      else setNotice('Location unavailable — showing demo waters')
+    }
+    const watchId = navigator.geolocation.watchPosition((p) => {
+      if (!best || (p.coords.accuracy || Infinity) < (best.coords.accuracy || Infinity)) {
+        best = p
+        updatePosition(p.coords)
+        if (p.coords.accuracy && p.coords.accuracy <= 5) finish()
+      }
+    }, () => setNotice('Location permission denied — showing demo waters'), { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 })
+    setTimeout(finish, 8000)
   }
 
   function savePoint() {
@@ -122,7 +143,7 @@ function Navigator() {
         <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => { setActiveDestination(d.id); map.current?.flyTo(d.coords, 15); setNotice(`Showing routes to ${d.name}`) }}><span>◆</span><div>{d.name}<small>{trips.find((t) => t.destinationId === d.id)?.points.length || 0} route points</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
       </section>
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button></div></section>
-      <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
+      <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
     </aside>
     <section className="map-area"><div ref={mapNode} className={mode ? 'map picking' : 'map'}></div><div className="map-top"><div><span className="map-label">SATELLITE / CHART</span><p>Live marine overview</p></div><button onClick={() => setMode('marker')}>＋ Add spot</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div></section>
     {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location — or click the chart to choose one.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
