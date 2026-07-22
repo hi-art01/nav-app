@@ -12,6 +12,7 @@ function Navigator() {
   const mapNode = useRef(null)
   const map = useRef(null)
   const modeRef = useRef(null)
+  const adjustingPositionRef = useRef(false)
   const userMarker = useRef(null)
   const accuracyCircle = useRef(null)
   const layers = useRef([])
@@ -24,6 +25,7 @@ function Navigator() {
   const [tracking, setTracking] = useState(false)
   const [depth, setDepth] = useState('')
   const [mode, setMode] = useState(null)
+  const [adjustingPosition, setAdjustingPosition] = useState(false)
   const [activeDestination, setActiveDestination] = useState(null)
   const [notice, setNotice] = useState('Ready to navigate')
   const [heading, setHeading] = useState(0)
@@ -31,6 +33,7 @@ function Navigator() {
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
 
   useEffect(() => { modeRef.current = mode }, [mode])
+  useEffect(() => { adjustingPositionRef.current = adjustingPosition }, [adjustingPosition])
 
   useEffect(() => {
     if (!followHeading) return undefined
@@ -54,6 +57,13 @@ function Navigator() {
       L.control.zoom({ position: 'bottomright' }).addTo(map.current)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
       map.current.on('click', (event) => {
+        if (adjustingPositionRef.current) {
+          const coords = { latitude: event.latlng.lat, longitude: event.latlng.lng, accuracy: 0 }
+          updatePosition(coords)
+          setAdjustingPosition(false)
+          setNotice('Position adjusted manually')
+          return
+        }
         if (!modeRef.current) return
         setDraft((current) => ({ ...current, coords: [event.latlng.lat, event.latlng.lng] }))
       })
@@ -133,6 +143,14 @@ function Navigator() {
     setTimeout(finish, 8000)
   }
 
+  function togglePositionAdjustment() {
+    setAdjustingPosition((current) => {
+      const next = !current
+      setNotice(next ? 'Tap the map to place your vessel precisely' : 'Position adjustment cancelled')
+      return next
+    })
+  }
+
   async function toggleHeading() {
     if (followHeading) { setFollowHeading(false); setNotice('North-up map'); return }
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -164,7 +182,7 @@ function Navigator() {
       <section className="section"><div className="section-title"><p className="eyebrow">DESTINATIONS</p><button className="icon-button" onClick={() => setMode('destination')}>＋</button></div>
         <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => { setActiveDestination(d.id); map.current?.flyTo(d.coords, 15); setNotice(`Showing routes to ${d.name}`) }}><span>◆</span><div>{d.name}<small>{trips.find((t) => t.destinationId === d.id)?.points.length || 0} route points</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
       </section>
-      <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button></div></section>
+      <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
     </aside>
     <section className="map-area"><div ref={mapNode} style={{ '--map-rotation': followHeading ? `${-heading}deg` : '0deg' }} className={`${mode ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}></div><div className="map-top"><div><span className="map-label">SATELLITE / CHART</span><p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : 'Live marine overview'}</p></div><button onClick={() => setMode('marker')}>＋ Add spot</button><button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div></section>
