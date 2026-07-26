@@ -2,4 +2,19 @@
 .heading-button { background: #12383b; color: #b9d7d4; border: 1px solid #426266; padding: 11px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .heading-button.active { background: #45d9b6; color: #06221f; border-color: #45d9b6; }
 .quick-actions button.adjusting { background: #45d9b6; color: #06221f; border-color: #45d9b6; }
+.depth-toggle { width: 100%; margin-top: 9px; padding: 9px 10px; border: 1px solid #2a5356; border-radius: 6px; background: #112e32; color: #afd0cd; font-size: 11px; text-align: left; }
+.depth-toggle.active { background: #163f40; border-color: #45d9b6; color: #6de5c8; }
+.depth-toggle span { margin-left: 4px; }
+.depth-panel { position: absolute; z-index: 1200; right: 22px; bottom: 68px; width: min(360px, calc(100% - 44px)); padding: 16px; border: 1px solid #426266; border-radius: 8px; background: #0b2224ed; color: #eaf6f4; box-shadow: 0 12px 30px #001b; }
+.depth-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+.depth-header strong { display: block; margin-top: 5px; font-size: 14px; }
+.depth-header button { border: 0; background: transparent; color: #9db8b7; font-size: 22px; line-height: 1; }
+.depth-bars { display: grid; gap: 9px; }
+.depth-row { display: grid; grid-template-columns: 92px 1fr 45px; align-items: center; gap: 8px; font-size: 10px; }
+.depth-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c4d7d4; }
+.depth-track { height: 7px; border-radius: 10px; background: #163c40; overflow: hidden; }
+.depth-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #45d9b6, #4c9cff); }
+.depth-row b { color: #70e6ca; text-align: right; font: 10px 'DM Mono'; }
+.depth-empty { color: #9db8b7; font-size: 11px; line-height: 1.45; margin: 0 0 10px; }
+.depth-panel > small { color: #6f9190; font-size: 9px; }
 @media (max-width: 720px) { .map-top { flex-wrap: wrap; } }
