@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import JSZip from 'jszip'
 import './App.css'
 import './layer-fix.css'
 import './heading.css'
@@ -23,6 +24,10 @@ function Navigator() {
   const activeDestinationRef = useRef(null)
   const headingRef = useRef(0)
   const hasHeadingRef = useRef(false)
+  const lastHeadingEventRef = useRef(0)
+  const followHeadingRef = useRef(false)
+  const gpsHeadingRef = useRef(false)
+  const fileInputRef = useRef(null)
   const [markers, setMarkers] = useState(() => read('markers', []))
   const [destinations, setDestinations] = useState(() => read('destinations', []))
   const [trips, setTrips] = useState(() => read('trips', []))
@@ -45,6 +50,7 @@ function Navigator() {
   useEffect(() => { adjustingPositionRef.current = adjustingPosition }, [adjustingPosition])
   useEffect(() => { trackingRef.current = tracking }, [tracking])
   useEffect(() => { activeDestinationRef.current = activeDestination }, [activeDestination])
+  useEffect(() => { followHeadingRef.current = followHeading; if (!followHeading) gpsHeadingRef.current = false }, [followHeading])
 
   useEffect(() => {
     if (!tracking) return undefined
@@ -61,11 +67,15 @@ function Navigator() {
   useEffect(() => {
     if (!followHeading) return undefined
     const onOrientation = (event) => {
+      if (gpsHeadingRef.current) return
+      const now = performance.now()
+      if (now - lastHeadingEventRef.current < 60) return
+      lastHeadingEventRef.current = now
       const next = typeof event.webkitCompassHeading === 'number' ? event.webkitCompassHeading : event.alpha == null ? null : (360 - event.alpha) % 360
       if (next != null && Number.isFinite(next)) {
         if (!hasHeadingRef.current) { headingRef.current = next; hasHeadingRef.current = true }
         const delta = ((next - headingRef.current + 540) % 360) - 180
-        if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.14 + 360) % 360
+        if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.08 + 360) % 360
         setHeading(headingRef.current)
       }
     }
@@ -146,12 +156,24 @@ function Navigator() {
     })
   }, [markers, destinations, trips, activeDestination, mapReady])
 
+  useEffect(() => {
+    if (!userMarker.current || !window.L) return
+    userMarker.current.setIcon(window.L.divIcon({ className: 'boat-pin', html: `<span class="boat-arrow" style="transform:rotate(${heading}deg)">▲</span>`, iconSize: [20, 20], iconAnchor: [10, 10] }))
+  }, [heading])
+
   function updatePosition(coords) {
     const next = [coords.latitude, coords.longitude]
     setPosition(next)
     if (Number.isFinite(coords.accuracy)) setAccuracy(coords.accuracy)
+    if (followHeadingRef.current && Number.isFinite(coords.heading) && coords.heading >= 0 && (coords.speed == null || coords.speed > 0.5)) {
+      gpsHeadingRef.current = true
+      const delta = ((coords.heading - headingRef.current + 540) % 360) - 180
+      if (!hasHeadingRef.current) { headingRef.current = coords.heading; hasHeadingRef.current = true }
+      else if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.12 + 360) % 360
+      setHeading(headingRef.current)
+    }
     if (map.current && window.L) {
-      if (!userMarker.current) userMarker.current = window.L.marker(next, { icon: window.L.divIcon({ className: 'boat-pin', html: '▲', iconSize: [20, 20], iconAnchor: [10, 10] }) }).addTo(map.current)
+      if (!userMarker.current) userMarker.current = window.L.marker(next, { icon: window.L.divIcon({ className: 'boat-pin', html: '<span class="boat-arrow">▲</span>', iconSize: [20, 20], iconAnchor: [10, 10] }) }).addTo(map.current)
       else userMarker.current.setLatLng(next)
       if (!accuracyCircle.current) accuracyCircle.current = window.L.circle(next, { radius: coords.accuracy || 10, color: '#58e1c4', weight: 1, fillColor: '#58e1c4', fillOpacity: 0.12 }).addTo(map.current)
       else accuracyCircle.current.setLatLng(next).setRadius(coords.accuracy || 10)
@@ -215,6 +237,40 @@ function Navigator() {
     setNotice(`Showing routes to ${destination?.name || 'destination'}`)
   }
 
+  function renameMarker(id) {
+    const marker = markers.find((item) => item.id === id)
+    const name = window.prompt('Rename marker', marker?.name || '')
+    if (name?.trim()) { setMarkers((list) => list.map((item) => item.id === id ? { ...item, name: name.trim() } : item)); setNotice('Marker renamed') }
+  }
+
+  function deleteMarker(id) {
+    const marker = markers.find((item) => item.id === id)
+    if (!marker || !window.confirm(`Delete “${marker.name}”?`)) return
+    setMarkers((list) => list.filter((item) => item.id !== id)); setNotice('Marker deleted')
+  }
+
+  async function exportZip() {
+    const zip = new JSZip()
+    zip.file('helm-navigation.json', JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), markers, destinations, trips }, null, 2))
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `helm-navigation-${new Date().toISOString().slice(0, 10)}.zip`; link.click(); URL.revokeObjectURL(link.href)
+    setNotice('Navigation backup exported')
+  }
+
+  async function importZip(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const zip = await JSZip.loadAsync(file)
+      const jsonFile = zip.file('helm-navigation.json')
+      if (!jsonFile) throw new Error('This ZIP does not contain Helm navigation data.')
+      const data = JSON.parse(await jsonFile.async('string'))
+      if (!Array.isArray(data.markers) || !Array.isArray(data.destinations) || !Array.isArray(data.trips)) throw new Error('Invalid Helm navigation backup.')
+      setMarkers(data.markers); setDestinations(data.destinations); setTrips(data.trips); activeDestinationRef.current = null; setActiveDestination(null); setNotice('Navigation backup imported')
+    } catch (error) { setNotice(error.message || 'Could not import that ZIP') }
+  }
+
   async function toggleHeading() {
     if (followHeading) { setFollowHeading(false); setNotice('North-up map'); return }
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -246,8 +302,10 @@ function Navigator() {
         <button className={tracking ? 'primary recording' : 'primary'} onClick={toggleTracking}>{tracking ? '■  End & save track' : '▶  Start trip tracking'}</button>
       </section>
       <section className="section"><div className="section-title"><p className="eyebrow">DESTINATIONS</p><button className="icon-button" onClick={() => setMode('destination')}>＋</button></div>
-        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}><span>◆</span><div>{d.name}<small>{trips.find((t) => t.destinationId === d.id)?.points.length || 0} route points</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
+        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}><span>◆</span><div>{d.name}<small>{trips.filter((t) => t.destinationId === d.id).length} {trips.filter((t) => t.destinationId === d.id).length === 1 ? 'trip' : 'trips'}</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
       </section>
+      <section className="section marker-section"><p className="eyebrow">SAVED MARKERS</p>{markers.length ? <div className="marker-list">{markers.map((marker) => <div className="marker-row" key={marker.id}><button className="marker-jump" onClick={() => map.current?.flyTo(marker.coords, 16)}><span>{marker.type === 'Lobster pot' ? '⚓' : '🐟'}</span><div>{marker.name}<small>{marker.depth ? `${marker.depth} ft · ` : ''}{marker.type}</small></div></button><button className="marker-action" onClick={() => renameMarker(marker.id)}>✎</button><button className="marker-action delete" onClick={() => deleteMarker(marker.id)}>×</button></div>)}</div> : <p className="empty">Your fish and lobster markers will appear here.</p>}</section>
+      <section className="section storage-section"><p className="eyebrow">ROUTE STORAGE</p><div className="storage-actions"><button onClick={exportZip}>⇩ Export ZIP</button><button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button><input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden /></div></section>
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div><button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart' : 'Show depth chart'}</span></button></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
     </aside>

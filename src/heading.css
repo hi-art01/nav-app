@@ -18,4 +18,18 @@
 .depth-row b { color: #70e6ca; text-align: right; font: 10px 'DM Mono'; }
 .depth-empty { color: #9db8b7; font-size: 11px; line-height: 1.45; margin: 0 0 10px; }
 .depth-panel > small { color: #6f9190; font-size: 9px; }
-@media (max-width: 720px) { .map-top { flex-wrap: wrap; } }
+.marker-list { display: grid; gap: 4px; margin-top: 9px; }
+.marker-row { display: flex; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: 6px; }
+.marker-row:hover { background: #14383b; border-color: #2c5d60; }
+.marker-jump { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: #c3d2d1; text-align: left; padding: 8px 7px; font-size: 11px; }
+.marker-jump > span { font-size: 14px; }
+.marker-jump div { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.marker-jump small { display: block; color: #769594; font: 9px 'DM Mono'; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.marker-action { width: 25px; height: 27px; border: 0; background: transparent; color: #8fb0ae; font-size: 14px; border-radius: 4px; }
+.marker-action:hover { color: #6de5c8; background: #1a484a; }
+.marker-action.delete:hover { color: #ff9c84; }
+.storage-actions { display: flex; gap: 6px; margin-top: 9px; }
+.storage-actions button { flex: 1; padding: 9px 7px; border: 1px solid #2a5356; border-radius: 6px; background: #112e32; color: #afd0cd; font-size: 10px; }
+.storage-actions button:hover { border-color: #55dbc0; color: #6de5c8; }
+.boat-arrow { display: inline-block; transform-origin: center; }
+@media (max-width: 720px) { .map-top { flex-wrap: wrap; gap: 7px; top: 10px; right: 10px; left: 10px; } .map-top div { flex: 1 1 100%; } .map-top button { padding: 9px 10px; font-size: 10px; } .quick-actions { gap: 5px; } .quick-actions button { padding: 9px 3px; font-size: 15px; } .quick-actions button span { font-size: 9px; } .storage-actions button { padding: 10px 5px; } }
