@@ -38,6 +38,7 @@ function Navigator() {
   const [followHeading, setFollowHeading] = useState(false)
   const [showDepthChart, setShowDepthChart] = useState(false)
   const [mapStyle, setMapStyle] = useState('satellite')
+  const [mapReady, setMapReady] = useState(false)
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
 
   useEffect(() => { modeRef.current = mode }, [mode])
@@ -97,6 +98,7 @@ function Navigator() {
         if (!modeRef.current) return
         setDraft((current) => ({ ...current, coords: [event.latlng.lat, event.latlng.lng] }))
       })
+      setMapReady(true)
     }
     if (window.L) setup()
     else document.getElementById('leaflet-js').addEventListener('load', setup, { once: true })
@@ -137,9 +139,12 @@ function Navigator() {
     })
     const visibleTrips = activeDestination ? trips.filter((trip) => trip.destinationId === activeDestination) : trips
     visibleTrips.forEach((trip) => {
-      if (trip.points.length > 1) layers.current.push(L.polyline(trip.points, { pane: 'routesPane', color: activeDestination ? '#37d4b4' : '#79a8ff', weight: activeDestination ? 5 : 3, opacity: activeDestination ? .9 : .75 }).addTo(map.current))
+      if (trip.points.length) {
+        const points = trip.points.length > 1 ? trip.points : [trip.points[0], trip.points[0]]
+        layers.current.push(L.polyline(points, { pane: 'routesPane', color: activeDestination ? '#37d4b4' : '#79a8ff', weight: activeDestination ? 6 : 4, opacity: activeDestination ? .95 : .85, lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
+      }
     })
-  }, [markers, destinations, trips, activeDestination])
+  }, [markers, destinations, trips, activeDestination, mapReady])
 
   function updatePosition(coords) {
     const next = [coords.latitude, coords.longitude]
@@ -166,7 +171,7 @@ function Navigator() {
       return
     }
     if (!activeDestination) { setNotice('Choose a destination before starting a trip'); return }
-    setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [position], createdAt: Date.now() }])
+    setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [position, position], createdAt: Date.now() }])
     trackingRef.current = true
     setTracking(true); setNotice('Recording your route — screen will stay awake')
     if (navigator.geolocation) watch.current = navigator.geolocation.watchPosition((p) => updatePosition(p.coords), () => setNotice('GPS unavailable — demo position is active'), { enableHighAccuracy: true, maximumAge: 0, timeout: 3000 })
