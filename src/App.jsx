@@ -11,7 +11,7 @@ const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify
 function Navigator() {
   const mapNode = useRef(null)
   const map = useRef(null)
-  const tileLayer = useRef(null)
+  const tileLayers = useRef([])
   const modeRef = useRef(null)
   const adjustingPositionRef = useRef(false)
   const userMarker = useRef(null)
@@ -84,7 +84,8 @@ function Navigator() {
       L.control.zoom({ position: 'bottomright' }).addTo(map.current)
       const routesPane = map.current.createPane('routesPane')
       routesPane.style.zIndex = 650
-      tileLayer.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
+      const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
+      tileLayers.current = [satelliteLayer]
       map.current.on('click', (event) => {
         if (adjustingPositionRef.current) {
           const coords = { latitude: event.latlng.lat, longitude: event.latlng.lng, accuracy: 0 }
@@ -105,14 +106,16 @@ function Navigator() {
   useEffect(() => {
     if (!map.current || !window.L) return
     const L = window.L
-    tileLayer.current?.remove()
+    tileLayers.current.forEach((layer) => layer.remove())
     const satellite = mapStyle === 'satellite'
-    tileLayer.current = L.tileLayer(satellite
-      ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-      : 'https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
-        attribution: satellite ? 'Tiles © Esri' : 'NOAA ENC Direct'
-      }).addTo(map.current)
+    if (satellite) {
+      tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
+    } else {
+      const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map.current)
+      const chartLayer = L.tileLayer('https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9, attribution: 'NOAA ENC Direct' }).addTo(map.current)
+      const seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.9, attribution: 'OpenSeaMap' }).addTo(map.current)
+      tileLayers.current = [streetLayer, chartLayer, seamarkLayer]
+    }
     setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA nautical chart enabled')
   }, [mapStyle])
 
