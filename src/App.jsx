@@ -11,6 +11,7 @@ const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify
 function Navigator() {
   const mapNode = useRef(null)
   const map = useRef(null)
+  const tileLayer = useRef(null)
   const modeRef = useRef(null)
   const adjustingPositionRef = useRef(false)
   const userMarker = useRef(null)
@@ -36,6 +37,7 @@ function Navigator() {
   const [heading, setHeading] = useState(0)
   const [followHeading, setFollowHeading] = useState(false)
   const [showDepthChart, setShowDepthChart] = useState(false)
+  const [mapStyle, setMapStyle] = useState('satellite')
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
 
   useEffect(() => { modeRef.current = mode }, [mode])
@@ -80,7 +82,9 @@ function Navigator() {
       const L = window.L
       map.current = L.map(mapNode.current, { zoomControl: false }).setView(DEMO_POSITION, 13)
       L.control.zoom({ position: 'bottomright' }).addTo(map.current)
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
+      const routesPane = map.current.createPane('routesPane')
+      routesPane.style.zIndex = 650
+      tileLayer.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
       map.current.on('click', (event) => {
         if (adjustingPositionRef.current) {
           const coords = { latitude: event.latlng.lat, longitude: event.latlng.lng, accuracy: 0 }
@@ -97,6 +101,20 @@ function Navigator() {
     else document.getElementById('leaflet-js').addEventListener('load', setup, { once: true })
     return () => { if (map.current) map.current.remove() }
   }, [])
+
+  useEffect(() => {
+    if (!map.current || !window.L) return
+    const L = window.L
+    tileLayer.current?.remove()
+    const satellite = mapStyle === 'satellite'
+    tileLayer.current = L.tileLayer(satellite
+      ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+      : 'https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: satellite ? 'Tiles © Esri' : 'NOAA ENC Direct'
+      }).addTo(map.current)
+    setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA nautical chart enabled')
+  }, [mapStyle])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
 
@@ -115,7 +133,7 @@ function Navigator() {
     })
     const visibleTrips = activeDestination ? trips.filter((trip) => trip.destinationId === activeDestination) : trips
     visibleTrips.forEach((trip) => {
-      if (trip.points.length > 1) layers.current.push(L.polyline(trip.points, { color: activeDestination ? '#37d4b4' : '#79a8ff', weight: activeDestination ? 5 : 3, opacity: activeDestination ? .9 : .45 }).addTo(map.current))
+      if (trip.points.length > 1) layers.current.push(L.polyline(trip.points, { pane: 'routesPane', color: activeDestination ? '#37d4b4' : '#79a8ff', weight: activeDestination ? 5 : 3, opacity: activeDestination ? .9 : .75 }).addTo(map.current))
     })
   }, [markers, destinations, trips, activeDestination])
 
@@ -178,6 +196,8 @@ function Navigator() {
     })
   }
 
+  function toggleMapStyle() { setMapStyle((style) => style === 'satellite' ? 'nautical' : 'satellite') }
+
   function selectDestination(id) {
     activeDestinationRef.current = id
     setActiveDestination(id)
@@ -222,7 +242,7 @@ function Navigator() {
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div><button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart' : 'Show depth chart'}</span></button></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
     </aside>
-    <section className="map-area"><div ref={mapNode} style={{ '--map-rotation': followHeading ? `${-heading}deg` : '0deg' }} className={`${mode ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}></div><div className="map-top"><div><span className="map-label">SATELLITE / CHART</span><p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : 'Live marine overview'}</p></div><button onClick={() => setMode('marker')}>＋ Add spot</button><button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div>{showDepthChart && <aside className="depth-panel"><div className="depth-header"><div><p className="eyebrow">REPORTED DEPTHS</p><strong>{depthPoints.length ? `${depthPoints.length} marked locations` : 'No depth reports yet'}</strong></div><button onClick={() => setShowDepthChart(false)}>×</button></div>{depthPoints.length ? <div className="depth-bars">{depthPoints.map((point) => <div className="depth-row" key={point.id}><span className="depth-name">{point.name}</span><div className="depth-track"><i style={{ width: `${Math.max(8, Number(point.depth) / maxDepth * 100)}%` }}></i></div><b>{point.depth} ft</b></div>)}</div> : <p className="depth-empty">Add a marker and enter its depth to build your chart.</p>}<small>Depths are user-reported at each saved marker.</small></aside>}</section>
+    <section className="map-area"><div ref={mapNode} style={{ '--map-rotation': followHeading ? `${-heading}deg` : '0deg' }} className={`${mode ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}></div><div className="map-top"><div><span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : 'NOAA NAUTICAL CHART'}</span><p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : 'Charted depths and navigation marks'}</p></div><button className="map-style-button" onClick={toggleMapStyle}>{mapStyle === 'satellite' ? '◈ Nautical chart' : '▣ Satellite view'}</button><button onClick={() => setMode('marker')}>＋ Add spot</button><button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button></div><div className="map-legend"><span><i className="route-key"></i>Saved route{active ? ` to ${active.name}` : 's'}</span><span><i className="boat-key">▲</i>Your vessel</span></div>{showDepthChart && <aside className="depth-panel"><div className="depth-header"><div><p className="eyebrow">REPORTED DEPTHS</p><strong>{depthPoints.length ? `${depthPoints.length} marked locations` : 'No depth reports yet'}</strong></div><button onClick={() => setShowDepthChart(false)}>×</button></div>{depthPoints.length ? <div className="depth-bars">{depthPoints.map((point) => <div className="depth-row" key={point.id}><span className="depth-name">{point.name}</span><div className="depth-track"><i style={{ width: `${Math.max(8, Number(point.depth) / maxDepth * 100)}%` }}></i></div><b>{point.depth} ft</b></div>)}</div> : <p className="depth-empty">Add a marker and enter its depth to build your chart.</p>}<small>Depths are user-reported at each saved marker.</small></aside>}</section>
     {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location — or click the chart to choose one.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
   </main>
 }
