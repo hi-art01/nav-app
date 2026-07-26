@@ -112,7 +112,7 @@ function Navigator() {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
     } else {
       const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map.current)
-      const chartLayer = L.tileLayer('https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9, attribution: 'NOAA ENC Direct' }).addTo(map.current)
+      const chartLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', { layers: 'show:79,80,108,232', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.95, attribution: 'NOAA ENC depth soundings' }).addTo(map.current)
       const seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.9, attribution: 'OpenSeaMap' }).addTo(map.current)
       tileLayers.current = [streetLayer, chartLayer, seamarkLayer]
     }
