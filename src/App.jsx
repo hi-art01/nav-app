@@ -27,6 +27,7 @@ function Navigator() {
   const lastHeadingEventRef = useRef(0)
   const followHeadingRef = useRef(false)
   const gpsHeadingRef = useRef(false)
+  const lastTravelPointRef = useRef(null)
   const fileInputRef = useRef(null)
   const [markers, setMarkers] = useState(() => read('markers', []))
   const [destinations, setDestinations] = useState(() => read('destinations', []))
@@ -63,26 +64,6 @@ function Navigator() {
     document.addEventListener('visibilitychange', onVisibility)
     return () => { document.removeEventListener('visibilitychange', onVisibility); wakeLock.current?.release(); wakeLock.current = null }
   }, [tracking])
-
-  useEffect(() => {
-    if (!followHeading) return undefined
-    const onOrientation = (event) => {
-      if (gpsHeadingRef.current) return
-      const now = performance.now()
-      if (now - lastHeadingEventRef.current < 60) return
-      lastHeadingEventRef.current = now
-      const next = typeof event.webkitCompassHeading === 'number' ? event.webkitCompassHeading : event.alpha == null ? null : (360 - event.alpha) % 360
-      if (next != null && Number.isFinite(next)) {
-        if (!hasHeadingRef.current) { headingRef.current = next; hasHeadingRef.current = true }
-        const delta = ((next - headingRef.current + 540) % 360) - 180
-        if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.08 + 360) % 360
-        setHeading(headingRef.current)
-      }
-    }
-    window.addEventListener('deviceorientationabsolute', onOrientation, true)
-    window.addEventListener('deviceorientation', onOrientation, true)
-    return () => { window.removeEventListener('deviceorientationabsolute', onOrientation, true); window.removeEventListener('deviceorientation', onOrientation, true) }
-  }, [followHeading])
 
   useEffect(() => { store('markers', markers) }, [markers])
   useEffect(() => { store('destinations', destinations) }, [destinations])
@@ -165,12 +146,23 @@ function Navigator() {
     const next = [coords.latitude, coords.longitude]
     setPosition(next)
     if (Number.isFinite(coords.accuracy)) setAccuracy(coords.accuracy)
-    if (followHeadingRef.current && Number.isFinite(coords.heading) && coords.heading >= 0 && (coords.speed == null || coords.speed > 0.5)) {
-      gpsHeadingRef.current = true
-      const delta = ((coords.heading - headingRef.current + 540) % 360) - 180
-      if (!hasHeadingRef.current) { headingRef.current = coords.heading; hasHeadingRef.current = true }
-      else if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.12 + 360) % 360
-      setHeading(headingRef.current)
+    if (followHeadingRef.current && trackingRef.current) {
+      const previous = lastTravelPointRef.current
+      let course = Number.isFinite(coords.heading) && coords.heading >= 0 && (coords.speed == null || coords.speed > 0.5) ? coords.heading : null
+      if (course == null && previous) {
+        const lat1 = previous.latitude * Math.PI / 180; const lat2 = coords.latitude * Math.PI / 180
+        const dLon = (coords.longitude - previous.longitude) * Math.PI / 180
+        const y = Math.sin(dLon) * Math.cos(lat2); const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
+        const moved = Math.hypot(coords.latitude - previous.latitude, (coords.longitude - previous.longitude) * Math.cos(lat2)) * 111320
+        if (moved >= 3) course = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+      }
+      if (course != null) {
+        const delta = ((course - headingRef.current + 540) % 360) - 180
+        if (!hasHeadingRef.current) { headingRef.current = course; hasHeadingRef.current = true }
+        else if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.12 + 360) % 360
+        setHeading(headingRef.current)
+      }
+      lastTravelPointRef.current = { latitude: coords.latitude, longitude: coords.longitude }
     }
     if (map.current && window.L) {
       if (!userMarker.current) userMarker.current = window.L.marker(next, { icon: window.L.divIcon({ className: 'boat-pin', html: '<span class="boat-arrow">▲</span>', iconSize: [20, 20], iconAnchor: [10, 10] }) }).addTo(map.current)
@@ -189,10 +181,12 @@ function Navigator() {
       navigator.geolocation?.clearWatch(watch.current)
       watch.current = null
       trackingRef.current = false
+      lastTravelPointRef.current = null
       setTracking(false); setNotice('Track saved on this device')
       return
     }
     if (!activeDestination) { setNotice('Choose a destination before starting a trip'); return }
+    lastTravelPointRef.current = { latitude: position[0], longitude: position[1] }
     setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [position, position], createdAt: Date.now() }])
     trackingRef.current = true
     setTracking(true); setNotice('Recording your route — screen will stay awake')
@@ -273,10 +267,8 @@ function Navigator() {
 
   async function toggleHeading() {
     if (followHeading) { setFollowHeading(false); setNotice('North-up map'); return }
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      try { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') { setNotice('Compass permission was denied'); return } } catch { setNotice('Compass permission was denied'); return }
-    }
-    setFollowHeading(true); setNotice('Following your compass heading')
+    headingRef.current = 0; hasHeadingRef.current = false; lastTravelPointRef.current = { latitude: position[0], longitude: position[1] }
+    setFollowHeading(true); setNotice(tracking ? 'Following your GPS course' : 'Start tracking to follow your boat course')
   }
 
   function savePoint() {
