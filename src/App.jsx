@@ -17,6 +17,11 @@ function Navigator() {
   const accuracyCircle = useRef(null)
   const layers = useRef([])
   const watch = useRef(null)
+  const wakeLock = useRef(null)
+  const trackingRef = useRef(false)
+  const activeDestinationRef = useRef(null)
+  const headingRef = useRef(0)
+  const hasHeadingRef = useRef(false)
   const [markers, setMarkers] = useState(() => read('markers', []))
   const [destinations, setDestinations] = useState(() => read('destinations', []))
   const [trips, setTrips] = useState(() => read('trips', []))
@@ -34,12 +39,31 @@ function Navigator() {
 
   useEffect(() => { modeRef.current = mode }, [mode])
   useEffect(() => { adjustingPositionRef.current = adjustingPosition }, [adjustingPosition])
+  useEffect(() => { trackingRef.current = tracking }, [tracking])
+  useEffect(() => { activeDestinationRef.current = activeDestination }, [activeDestination])
+
+  useEffect(() => {
+    if (!tracking) return undefined
+    const keepScreenAwake = async () => {
+      if (!('wakeLock' in navigator)) return
+      try { wakeLock.current = await navigator.wakeLock.request('screen') } catch { /* device/browser may deny wake lock */ }
+    }
+    const onVisibility = () => { if (document.visibilityState === 'visible') keepScreenAwake() }
+    keepScreenAwake()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { document.removeEventListener('visibilitychange', onVisibility); wakeLock.current?.release(); wakeLock.current = null }
+  }, [tracking])
 
   useEffect(() => {
     if (!followHeading) return undefined
     const onOrientation = (event) => {
       const next = typeof event.webkitCompassHeading === 'number' ? event.webkitCompassHeading : event.alpha == null ? null : (360 - event.alpha) % 360
-      if (next != null && Number.isFinite(next)) setHeading(next)
+      if (next != null && Number.isFinite(next)) {
+        if (!hasHeadingRef.current) { headingRef.current = next; hasHeadingRef.current = true }
+        const delta = ((next - headingRef.current + 540) % 360) - 180
+        if (Math.abs(delta) > 1) headingRef.current = (headingRef.current + delta * 0.14 + 360) % 360
+        setHeading(headingRef.current)
+      }
     }
     window.addEventListener('deviceorientationabsolute', onOrientation, true)
     window.addEventListener('deviceorientation', onOrientation, true)
@@ -105,8 +129,8 @@ function Navigator() {
       else accuracyCircle.current.setLatLng(next).setRadius(coords.accuracy || 10)
       map.current.panTo(next)
     }
-    if (tracking && activeDestination) {
-      setTrips((previous) => previous.map((trip) => trip.destinationId === activeDestination ? { ...trip, points: [...trip.points, next] } : trip))
+    if (trackingRef.current && activeDestinationRef.current) {
+      setTrips((previous) => previous.map((trip) => trip.destinationId === activeDestinationRef.current ? { ...trip, points: [...trip.points, next] } : trip))
     }
   }
 
@@ -114,13 +138,15 @@ function Navigator() {
     if (tracking) {
       navigator.geolocation?.clearWatch(watch.current)
       watch.current = null
+      trackingRef.current = false
       setTracking(false); setNotice('Track saved on this device')
       return
     }
     if (!activeDestination) { setNotice('Choose a destination before starting a trip'); return }
     setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [position], createdAt: Date.now() }])
-    setTracking(true); setNotice('Recording your route')
-    if (navigator.geolocation) watch.current = navigator.geolocation.watchPosition((p) => updatePosition(p.coords), () => setNotice('GPS unavailable — demo position is active'), { enableHighAccuracy: true, maximumAge: 5000 })
+    trackingRef.current = true
+    setTracking(true); setNotice('Recording your route — screen will stay awake')
+    if (navigator.geolocation) watch.current = navigator.geolocation.watchPosition((p) => updatePosition(p.coords), () => setNotice('GPS unavailable — demo position is active'), { enableHighAccuracy: true, maximumAge: 0, timeout: 3000 })
     else setNotice('GPS is not supported by this browser')
   }
 
@@ -151,6 +177,14 @@ function Navigator() {
     })
   }
 
+  function selectDestination(id) {
+    activeDestinationRef.current = id
+    setActiveDestination(id)
+    const destination = destinations.find((item) => item.id === id)
+    if (destination) map.current?.flyTo(destination.coords, 15)
+    setNotice(`Showing routes to ${destination?.name || 'destination'}`)
+  }
+
   async function toggleHeading() {
     if (followHeading) { setFollowHeading(false); setNotice('North-up map'); return }
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -164,7 +198,7 @@ function Navigator() {
     const coords = draft.coords || position
     if (mode === 'destination') {
       const item = { id: uid(), name: draft.name.trim(), coords }
-      setDestinations((list) => [...list, item]); setActiveDestination(item.id); setNotice(`${item.name} is ready for a trip`)
+      setDestinations((list) => [...list, item]); activeDestinationRef.current = item.id; setActiveDestination(item.id); setNotice(`${item.name} is ready for a trip`)
     } else {
       setMarkers((list) => [...list, { id: uid(), name: draft.name.trim(), type: draft.type, coords, depth: depth || null }]); setNotice('Marker dropped')
     }
@@ -180,7 +214,7 @@ function Navigator() {
         <button className={tracking ? 'primary recording' : 'primary'} onClick={toggleTracking}>{tracking ? '■  End & save track' : '▶  Start trip tracking'}</button>
       </section>
       <section className="section"><div className="section-title"><p className="eyebrow">DESTINATIONS</p><button className="icon-button" onClick={() => setMode('destination')}>＋</button></div>
-        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => { setActiveDestination(d.id); map.current?.flyTo(d.coords, 15); setNotice(`Showing routes to ${d.name}`) }}><span>◆</span><div>{d.name}<small>{trips.find((t) => t.destinationId === d.id)?.points.length || 0} route points</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
+        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}><span>◆</span><div>{d.name}<small>{trips.find((t) => t.destinationId === d.id)?.points.length || 0} route points</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
       </section>
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
