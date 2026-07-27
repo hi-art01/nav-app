@@ -326,6 +326,30 @@ function Navigator() {
     setMode(null); setDraft({ name: '', type: 'Fish spot', coords: null }); setDepth('')
   }
 
+  const [destinationsOpen, setDestinationsOpen] = useState(true)
+  const [markersOpen, setMarkersOpen] = useState(true)
+  const [markerFilter, setMarkerFilter] = useState('All')
+  const [collapsedGroups, setCollapsedGroups] = useState({})
+
+  const toggleGroup = (type) => {
+    setCollapsedGroups((prev) => ({ ...prev, [type]: !prev[type] }))
+  }
+
+  const filteredMarkers = useMemo(() => {
+    if (markerFilter === 'All') return markers
+    return markers.filter((m) => m.type === markerFilter)
+  }, [markers, markerFilter])
+
+  const groupedMarkers = useMemo(() => {
+    const groups = {}
+    filteredMarkers.forEach((m) => {
+      const t = m.type || 'Fish spot'
+      if (!groups[t]) groups[t] = []
+      groups[t].push(m)
+    })
+    return Object.entries(groups).map(([type, items]) => ({ type, items }))
+  }, [filteredMarkers])
+
   const active = destinations.find((destination) => destination.id === activeDestination)
   const depthPoints = markers.filter((marker) => Number.isFinite(Number(marker.depth)) && Number(marker.depth) > 0).sort((a, b) => Number(a.depth) - Number(b.depth))
   const maxDepth = Math.max(...depthPoints.map((marker) => Number(marker.depth)), 1)
@@ -337,10 +361,82 @@ function Navigator() {
       <section><p className="eyebrow">YOUR VOYAGE</p><h1>{active ? active.name : 'No destination set'}</h1><p className="subtle">{active ? `${selectedTrip?.points.length || 0} recorded waypoints` : 'Select a saved location to begin'}</p>
         <button className={tracking ? 'primary recording' : 'primary'} onClick={toggleTracking}>{tracking ? '■  End & save track' : '▶  Start trip tracking'}</button>
       </section>
-      <section className="section"><div className="section-title"><p className="eyebrow">DESTINATIONS</p><button className="icon-button" onClick={() => setMode('destination')}>＋</button></div>
-        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}><span>◆</span><div>{d.name}<small>{trips.filter((t) => t.destinationId === d.id).length} {trips.filter((t) => t.destinationId === d.id).length === 1 ? 'trip' : 'trips'}</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
+      
+      <section className="section">
+        <div className="section-title collapsible" onClick={() => setDestinationsOpen((prev) => !prev)}>
+          <p className="eyebrow">DESTINATIONS ({destinations.length})<span className="chevron">{destinationsOpen ? ' ▲' : ' ▼'}</span></p>
+          <button className="icon-button" onClick={(e) => { e.stopPropagation(); setMode('destination') }} title="Add destination">＋</button>
+        </div>
+        {destinationsOpen && (
+          <div className="destination-list">
+            {destinations.length ? (
+              destinations.map((d) => (
+                <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}>
+                  <span>◆</span>
+                  <div>
+                    {d.name}
+                    <small>{trips.filter((t) => t.destinationId === d.id).length} {trips.filter((t) => t.destinationId === d.id).length === 1 ? 'trip' : 'trips'}</small>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <p className="empty">Add a destination, then tap it to see its saved routes.</p>
+            )}
+          </div>
+        )}
       </section>
-      <section className="section marker-section"><p className="eyebrow">SAVED MARKERS</p>{markers.length ? <div className="marker-list">{markers.map((marker) => <div className="marker-row" key={marker.id}><button className="marker-jump" onClick={() => map.current?.flyTo(marker.coords, 16)}><span>{marker.type === 'Lobster pot' ? '⚓' : marker.type === 'Hazard' ? '⚠️' : marker.type === 'Anchor point' ? '⚓' : marker.type === 'Buoy / Navigation mark' ? '🔔' : '🐟'}</span><div>{marker.name}<small>{marker.depth ? `${marker.depth} ft · ` : ''}{marker.type}</small></div></button><button className="marker-action" onClick={() => openEditMarker(marker)} title="Edit marker">✎</button><button className="marker-action delete" onClick={() => deleteMarker(marker.id)} title="Delete marker">×</button></div>)}</div> : <p className="empty">Your fish, hazard, and navigation markers will appear here.</p>}</section>
+
+      <section className="section marker-section">
+        <div className="section-title collapsible" onClick={() => setMarkersOpen((prev) => !prev)}>
+          <p className="eyebrow">SAVED MARKERS ({markers.length})<span className="chevron">{markersOpen ? ' ▲' : ' ▼'}</span></p>
+          <div className="marker-header-actions" onClick={(e) => e.stopPropagation()}>
+            {markers.length > 0 && (
+              <select className="marker-filter-select" value={markerFilter} onChange={(e) => setMarkerFilter(e.target.value)}>
+                <option value="All">All Types</option>
+                <option value="Fish spot">Fish spots</option>
+                <option value="Lobster pot">Lobster pots</option>
+                <option value="Hazard">Hazards</option>
+                <option value="Anchor point">Anchor points</option>
+                <option value="Buoy / Navigation mark">Navigation marks</option>
+              </select>
+            )}
+          </div>
+        </div>
+        {markersOpen && (
+          markers.length ? (
+            <div className="marker-list">
+              {groupedMarkers.map(({ type, items }) => (
+                <div className="marker-group" key={type}>
+                  <button className="marker-group-header" onClick={() => toggleGroup(type)}>
+                    <span>{type === 'Lobster pot' ? '⚓' : type === 'Hazard' ? '⚠️' : type === 'Anchor point' ? '⚓' : type === 'Buoy / Navigation mark' ? '🔔' : '🐟'} {type} ({items.length})</span>
+                    <span className="chevron">{collapsedGroups[type] ? '▶' : '▼'}</span>
+                  </button>
+                  {!collapsedGroups[type] && (
+                    <div className="marker-group-items">
+                      {items.map((marker) => (
+                        <div className="marker-row" key={marker.id}>
+                          <button className="marker-jump" onClick={() => map.current?.flyTo(marker.coords, 16)}>
+                            <span>{marker.type === 'Lobster pot' ? '⚓' : marker.type === 'Hazard' ? '⚠️' : marker.type === 'Anchor point' ? '⚓' : marker.type === 'Buoy / Navigation mark' ? '🔔' : '🐟'}</span>
+                            <div>
+                              {marker.name}
+                              <small>{marker.depth ? `${marker.depth} ft · ` : ''}{marker.type}</small>
+                            </div>
+                          </button>
+                          <button className="marker-action" onClick={() => openEditMarker(marker)} title="Edit marker">✎</button>
+                          <button className="marker-action delete" onClick={() => deleteMarker(marker.id)} title="Delete marker">×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty">Your fish, hazard, and navigation markers will appear here.</p>
+          )
+        )}
+      </section>
+
       <section className="section storage-section"><p className="eyebrow">ROUTE STORAGE</p><div className="storage-actions"><button onClick={exportZip}>⇩ Export ZIP</button><button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button><input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden /></div></section>
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div><button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart' : 'Show depth chart'}</span></button></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
@@ -417,6 +513,7 @@ function Navigator() {
       </div>
     )}
   </main>
+
 }
 
 function App() {
