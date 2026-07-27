@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import JSZip from 'jszip'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import './App.css'
 import './layer-fix.css'
 import './heading.css'
@@ -100,45 +102,42 @@ function Navigator() {
   useEffect(() => { store('trips', trips) }, [trips])
 
   useEffect(() => {
-    const setup = () => {
-      const L = window.L
-      // Initialize map without default zoom control to prevent rotation issues
-      map.current = L.map(mapNode.current, { zoomControl: false }).setView(DEMO_POSITION, 13)
-      const routesPane = map.current.createPane('routesPane')
-      routesPane.style.zIndex = 650
-      const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
-      tileLayers.current = [satelliteLayer]
+    if (!mapNode.current) return
+    map.current = L.map(mapNode.current, { zoomControl: false }).setView(DEMO_POSITION, 13)
+    const routesPane = map.current.createPane('routesPane')
+    routesPane.style.zIndex = 650
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)
+    tileLayers.current = [satelliteLayer]
 
-      map.current.on('click', (event) => {
-        // 1. Relocating an existing marker
-        if (relocatingMarkerRef.current) {
-          setEditingMarker((current) => current ? { ...current, coords: [event.latlng.lat, event.latlng.lng] } : null)
-          setRelocatingMarker(false)
-          setNotice('Marker position updated — click Save to apply')
-          return
-        }
-        // 2. Adjusting user vessel position manually
-        if (adjustingPositionRef.current) {
-          const coords = { latitude: event.latlng.lat, longitude: event.latlng.lng, accuracy: 0 }
-          updatePosition(coords)
-          setAdjustingPosition(false)
-          setNotice('Position adjusted manually')
-          return
-        }
-        // 3. Adding a new point or destination
-        if (!modeRef.current) return
-        setDraft((current) => ({ ...current, coords: [event.latlng.lat, event.latlng.lng] }))
-      })
-      setMapReady(true)
+    map.current.on('click', (event) => {
+      if (relocatingMarkerRef.current) {
+        setEditingMarker((current) => current ? { ...current, coords: [event.latlng.lat, event.latlng.lng] } : null)
+        setRelocatingMarker(false)
+        setNotice('Marker position updated — click Save to apply')
+        return
+      }
+      if (adjustingPositionRef.current) {
+        const coords = { latitude: event.latlng.lat, longitude: event.latlng.lng, accuracy: 0 }
+        updatePosition(coords)
+        setAdjustingPosition(false)
+        setNotice('Position adjusted manually')
+        return
+      }
+      if (!modeRef.current) return
+      setDraft((current) => ({ ...current, coords: [event.latlng.lat, event.latlng.lng] }))
+    })
+
+    setMapReady(true)
+    return () => {
+      if (map.current) {
+        map.current.remove()
+        map.current = null
+      }
     }
-    if (window.L) setup()
-    else document.getElementById('leaflet-js').addEventListener('load', setup, { once: true })
-    return () => { if (map.current) map.current.remove() }
   }, [])
 
   useEffect(() => {
-    if (!map.current || !window.L) return
-    const L = window.L
+    if (!map.current || !mapReady) return
     tileLayers.current.forEach((layer) => layer.remove())
     const satellite = mapStyle === 'satellite'
     if (satellite) {
@@ -174,13 +173,12 @@ function Navigator() {
       tileLayers.current = [oceanBase, oceanRef, noaaSoundings, seamarkLayer]
     }
     setNotice(satellite ? 'Satellite imagery enabled' : 'C-MAP style depth chart enabled (with numbered depth soundings)')
-  }, [mapStyle])
+  }, [mapStyle, mapReady])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
 
   useEffect(() => {
-    if (!map.current || !window.L) return
-    const L = window.L
+    if (!map.current || !mapReady) return
     layers.current.forEach((layer) => layer.remove())
     layers.current = []
 
@@ -211,8 +209,8 @@ function Navigator() {
   }, [markers, destinations, trips, activeDestination, mapReady, editingMarker])
 
   useEffect(() => {
-    if (!userMarker.current || !window.L) return
-    userMarker.current.setIcon(createBoatIcon(window.L, heading))
+    if (!userMarker.current) return
+    userMarker.current.setIcon(createBoatIcon(L, heading))
   }, [heading])
 
   function updatePosition(coords) {
@@ -238,13 +236,13 @@ function Navigator() {
     }
     lastTravelPointRef.current = { latitude: coords.latitude, longitude: coords.longitude }
 
-    if (map.current && window.L) {
+    if (map.current) {
       if (!userMarker.current) {
-        userMarker.current = window.L.marker(next, { icon: createBoatIcon(window.L, headingRef.current) }).addTo(map.current)
+        userMarker.current = L.marker(next, { icon: createBoatIcon(L, headingRef.current) }).addTo(map.current)
       } else {
         userMarker.current.setLatLng(next)
       }
-      if (!accuracyCircle.current) accuracyCircle.current = window.L.circle(next, { radius: coords.accuracy || 10, color: '#58e1c4', weight: 1, fillColor: '#58e1c4', fillOpacity: 0.12 }).addTo(map.current)
+      if (!accuracyCircle.current) accuracyCircle.current = L.circle(next, { radius: coords.accuracy || 10, color: '#58e1c4', weight: 1, fillColor: '#58e1c4', fillOpacity: 0.12 }).addTo(map.current)
       else accuracyCircle.current.setLatLng(next).setRadius(coords.accuracy || 10)
       map.current.panTo(next)
     }
