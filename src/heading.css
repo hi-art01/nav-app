@@ -31,5 +31,38 @@
 .storage-actions { display: flex; gap: 6px; margin-top: 9px; }
 .storage-actions button { flex: 1; padding: 9px 7px; border: 1px solid #2a5356; border-radius: 6px; background: #112e32; color: #afd0cd; font-size: 10px; }
 .storage-actions button:hover { border-color: #55dbc0; color: #6de5c8; }
-.boat-arrow { display: inline-block; transform-origin: center; }
-@media (max-width: 720px) { .map-top { flex-wrap: wrap; gap: 7px; top: 10px; right: 10px; left: 10px; } .map-top div { flex: 1 1 100%; } .map-top button { padding: 9px 10px; font-size: 10px; } .quick-actions { gap: 5px; } .quick-actions button { padding: 9px 3px; font-size: 15px; } .quick-actions button span { font-size: 9px; } .storage-actions button { padding: 10px 5px; } }
+
+/* ── Boat arrow (SVG-based, centered on anchor) ─────────────────────────── */
+.boat-pin { display: flex !important; align-items: center !important; justify-content: center !important; background: transparent !important; border: 0 !important; }
+
+/* ── Custom zoom controls (outside rotating map div so they never move) ──── */
+.custom-zoom-controls { position: absolute; z-index: 1000; bottom: 25px; right: 25px; display: flex; flex-direction: column; gap: 3px; }
+.custom-zoom-controls button { width: 32px; height: 32px; border: 1px solid #426266; background: #0b2224ee; color: #c3d5d3; font-size: 20px; font-weight: 700; line-height: 1; border-radius: 5px; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s, border-color .15s; }
+.custom-zoom-controls button:hover { background: #163c40; color: #5be2c3; border-color: #55dbc0; }
+
+/* ── Relocation banner ───────────────────────────────────────────────────── */
+.relocate-banner { position: absolute; z-index: 1300; top: 75px; left: 50%; transform: translateX(-50%); background: #0d3d36ee; border: 1px solid #45d9b6; border-radius: 8px; padding: 10px 18px; color: #e0fff8; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 14px; white-space: nowrap; box-shadow: 0 4px 20px #000b; }
+.relocate-banner button { border: 0; background: transparent; color: #86d9c4; font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+/* ── Relocate button inside edit modal ───────────────────────────────────── */
+.relocate-button { display: block; width: 100%; margin-top: 13px; padding: 10px; border: 1px dashed #426266; border-radius: 6px; background: transparent; color: #6de5c8; font-size: 12px; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; }
+.relocate-button:hover { border-color: #45d9b6; background: #163c40; }
+
+/* ── C-MAP style depth zone legend ──────────────────────────────────────── */
+.depth-legend-cmap { position: absolute; z-index: 1000; left: 25px; bottom: 68px; background: #0b2224ee; border: 1px solid #426266; border-radius: 8px; padding: 10px 13px; min-width: 155px; }
+.depth-legend-cmap p { margin: 0 0 7px; font: 9px 'DM Mono'; letter-spacing: 1.5px; color: #55dbbe; }
+/* Gradient matches Esri Ocean Base colour scheme: white/light-green shallow → deep navy */
+.depth-zone-bar { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #d9f1ea 0%, #a8d5cd 14%, #74b5c9 28%, #4a8bbf 44%, #2e6aac 60%, #1a4d8e 78%, #0f3270 100%); margin-bottom: 5px; }
+.depth-zone-labels { display: flex; justify-content: space-between; color: #7a9e9c; font: 8px 'DM Mono'; }
+
+@media (max-width: 720px) {
+  .map-top { flex-wrap: wrap; gap: 7px; top: 10px; right: 10px; left: 10px; }
+  .map-top div { flex: 1 1 100%; }
+  .map-top button { padding: 9px 10px; font-size: 10px; }
+  .quick-actions { gap: 5px; }
+  .quick-actions button { padding: 9px 3px; font-size: 15px; }
+  .quick-actions button span { font-size: 9px; }
+  .storage-actions button { padding: 10px 5px; }
+  .custom-zoom-controls { bottom: 15px; right: 15px; }
+  .depth-legend-cmap { left: 15px; bottom: 58px; }
+}
