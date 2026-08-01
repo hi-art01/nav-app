@@ -28,7 +28,7 @@ function Navigator() {
   const activeDestinationRef = useRef(null)
   const headingRef = useRef(0)
   const hasHeadingRef = useRef(false)
-  const lastHeadingEventRef = useRef(0)
+  const _lastHeadingEventRef = useRef(0)
   const followHeadingRef = useRef(false)
   const gpsHeadingRef = useRef(false)
   const lastTravelPointRef = useRef(null)
@@ -54,8 +54,28 @@ function Navigator() {
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
   const [editingMarker, setEditingMarker] = useState(null)
   const [relocatingMarker, setRelocatingMarker] = useState(false)
+  const [acquiringGPS, setAcquiringGPS] = useState(false)
+  const [destDropdownOpen, setDestDropdownOpen] = useState(false)
+  const [markerDropdownOpen, setMarkerDropdownOpen] = useState(false)
+
+  const destDropdownRef = useRef(null)
+  const markerDropdownRef = useRef(null)
 
   useEffect(() => { modeRef.current = mode }, [mode])
+
+  // Click outside listener for dropdowns
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (destDropdownRef.current && !destDropdownRef.current.contains(event.target)) {
+        setDestDropdownOpen(false)
+      }
+      if (markerDropdownRef.current && !markerDropdownRef.current.contains(event.target)) {
+        setMarkerDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
   useEffect(() => { adjustingPositionRef.current = adjustingPosition }, [adjustingPosition])
   useEffect(() => { trackingRef.current = tracking }, [tracking])
   useEffect(() => { activeDestinationRef.current = activeDestination }, [activeDestination])
@@ -217,12 +237,57 @@ function Navigator() {
       return
     }
     if (!activeDestination) { setNotice('Choose a destination before starting a trip'); return }
-    lastTravelPointRef.current = { latitude: position[0], longitude: position[1] }
-    setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [position, position], createdAt: Date.now() }])
-    trackingRef.current = true
-    setTracking(true); setNotice('Recording your route — screen will stay awake')
-    if (navigator.geolocation) watch.current = navigator.geolocation.watchPosition((p) => updatePosition(p.coords), () => setNotice('GPS unavailable — demo position is active'), { enableHighAccuracy: true, maximumAge: 0, timeout: 3000 })
-    else setNotice('GPS is not supported by this browser')
+    if (!navigator.geolocation) {
+      setNotice('GPS is not supported by this browser')
+      return
+    }
+
+    setAcquiringGPS(true)
+    setNotice('Obtaining GPS lock before starting trip…')
+
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setAcquiringGPS(false)
+        const next = [p.coords.latitude, p.coords.longitude]
+
+        setPosition(next)
+        if (Number.isFinite(p.coords.accuracy)) setAccuracy(p.coords.accuracy)
+
+        if (map.current && window.L) {
+          if (!userMarker.current) {
+            userMarker.current = window.L.marker(next, {
+              icon: window.L.divIcon({ className: 'boat-pin', html: boatIcon(headingRef.current), iconSize: [28, 28], iconAnchor: [14, 14] })
+            }).addTo(map.current)
+          } else {
+            userMarker.current.setLatLng(next)
+          }
+          if (!accuracyCircle.current) {
+            accuracyCircle.current = window.L.circle(next, { radius: p.coords.accuracy || 10, color: '#58e1c4', weight: 1, fillColor: '#58e1c4', fillOpacity: 0.12 }).addTo(map.current)
+          } else {
+            accuracyCircle.current.setLatLng(next).setRadius(p.coords.accuracy || 10)
+          }
+          map.current.flyTo(next, 15, { animate: true, duration: 1.5 })
+        }
+
+        lastTravelPointRef.current = { latitude: p.coords.latitude, longitude: p.coords.longitude }
+        setTrips((old) => old.some((trip) => trip.destinationId === activeDestination) ? old : [...old, { id: uid(), destinationId: activeDestination, points: [next, next], createdAt: Date.now() }])
+
+        trackingRef.current = true
+        setTracking(true)
+        setNotice('Recording your route — screen will stay awake')
+
+        watch.current = navigator.geolocation.watchPosition(
+          (watchP) => updatePosition(watchP.coords),
+          () => setNotice('GPS unavailable — using last known position'),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 3000 }
+        )
+      },
+      (_err) => {
+        setAcquiringGPS(false)
+        setNotice('GPS signal required to start trip')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
   }
 
   function locate() {
@@ -260,6 +325,7 @@ function Navigator() {
     const destination = destinations.find((item) => item.id === id)
     if (destination) map.current?.flyTo(destination.coords, 15)
     setNotice(`Showing routes to ${destination?.name || 'destination'}`)
+    setDestDropdownOpen(false)
   }
 
   // Full marker editing: open modal pre-filled with all current values
@@ -342,15 +408,135 @@ function Navigator() {
       <div className="brand"><div className="brand-mark">⌁</div><div><b>HELM</b><small>MARINE NAVIGATION</small></div></div>
       <div className="status"><span className={tracking ? 'live-dot' : ''}></span>{notice}</div>
       <section><p className="eyebrow">YOUR VOYAGE</p><h1>{active ? active.name : 'No destination set'}</h1><p className="subtle">{active ? `${selectedTrip?.points.length || 0} recorded waypoints` : 'Select a saved location to begin'}</p>
-        <button className={tracking ? 'primary recording' : 'primary'} onClick={toggleTracking}>{tracking ? '■  End & save track' : '▶  Start trip tracking'}</button>
+        <button
+          className={tracking ? 'primary recording' : 'primary'}
+          onClick={toggleTracking}
+          disabled={acquiringGPS}
+        >
+          {acquiringGPS ? '⌛  Obtaining GPS lock…' : tracking ? '■  End & save track' : '▶  Start trip tracking'}
+        </button>
       </section>
-      <section className="section"><div className="section-title"><p className="eyebrow">DESTINATIONS</p><button className="icon-button" onClick={() => setMode('destination')}>＋</button></div>
-        <div className="destination-list">{destinations.length ? destinations.map((d) => <button key={d.id} className={activeDestination === d.id ? 'destination active' : 'destination'} onClick={() => selectDestination(d.id)}><span>◆</span><div>{d.name}<small>{trips.filter((t) => t.destinationId === d.id).length} {trips.filter((t) => t.destinationId === d.id).length === 1 ? 'trip' : 'trips'}</small></div></button>) : <p className="empty">Add a destination, then tap it to see its saved routes.</p>}</div>
+      <section className="section" ref={destDropdownRef}>
+        <p className="eyebrow">DESTINATIONS</p>
+        <div className="custom-dropdown">
+          <button
+            type="button"
+            className="dropdown-trigger"
+            onClick={() => setDestDropdownOpen(!destDropdownOpen)}
+          >
+            <span>◆</span>
+            <div className="trigger-text">
+              {active ? active.name : 'Select Destination'}
+              <small>{destinations.length} saved</small>
+            </div>
+            <span className="arrow">{destDropdownOpen ? '▲' : '▼'}</span>
+          </button>
+          {destDropdownOpen && (
+            <div className="dropdown-menu">
+              <div className="dropdown-items">
+                {destinations.length ? (
+                  destinations.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className={activeDestination === d.id ? 'dropdown-item active' : 'dropdown-item'}
+                      onClick={() => selectDestination(d.id)}
+                    >
+                      <span>◆</span>
+                      <div>
+                        {d.name}
+                        <small>{trips.filter((t) => t.destinationId === d.id).length} {trips.filter((t) => t.destinationId === d.id).length === 1 ? 'trip' : 'trips'}</small>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <p className="dropdown-empty-msg">No destinations saved</p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="dropdown-add-btn"
+                onClick={() => { setMode('destination'); setDestDropdownOpen(false) }}
+              >
+                ＋ Add destination
+              </button>
+            </div>
+          )}
+        </div>
       </section>
-      <section className="section marker-section"><p className="eyebrow">SAVED MARKERS</p>{markers.length ? <div className="marker-list">{markers.map((marker) => {
-        const emoji = marker.type === 'Lobster pot' ? '⚓' : marker.type === 'Hazard' ? '⚠️' : marker.type === 'Anchor point' ? '⚓' : '🐟'
-        return <div className="marker-row" key={marker.id}><button className="marker-jump" onClick={() => map.current?.flyTo(marker.coords, 16)}><span>{emoji}</span><div>{marker.name}<small>{marker.depth ? `${marker.depth} ft · ` : ''}{marker.type}</small></div></button><button className="marker-action" onClick={() => editMarker(marker.id)}>✎</button><button className="marker-action delete" onClick={() => deleteMarker(marker.id)}>×</button></div>
-      })}</div> : <p className="empty">Your fish and lobster markers will appear here.</p>}</section>
+
+      <section className="section marker-section" ref={markerDropdownRef}>
+        <p className="eyebrow">SAVED MARKERS</p>
+        <div className="custom-dropdown">
+          <button
+            type="button"
+            className="dropdown-trigger"
+            onClick={() => setMarkerDropdownOpen(!markerDropdownOpen)}
+          >
+            <span>📍</span>
+            <div className="trigger-text">
+              Saved Markers
+              <small>{markers.length} marked spots</small>
+            </div>
+            <span className="arrow">{markerDropdownOpen ? '▲' : '▼'}</span>
+          </button>
+          {markerDropdownOpen && (
+            <div className="dropdown-menu">
+              <div className="dropdown-items">
+                {markers.length ? (
+                  markers.map((marker) => {
+                    const emoji = marker.type === 'Lobster pot' ? '⚓' : marker.type === 'Hazard' ? '⚠️' : marker.type === 'Anchor point' ? '⚓' : '🐟'
+                    return (
+                      <div className="dropdown-item-row" key={marker.id}>
+                        <button
+                          type="button"
+                          className="marker-jump"
+                          onClick={() => {
+                            map.current?.flyTo(marker.coords, 16)
+                            setMarkerDropdownOpen(false)
+                          }}
+                        >
+                          <span>{emoji}</span>
+                          <div>
+                            {marker.name}
+                            <small>{marker.depth ? `${marker.depth} ft · ` : ''}{marker.type}</small>
+                          </div>
+                        </button>
+                        <div className="marker-actions">
+                          <button
+                            type="button"
+                            className="marker-action"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              editMarker(marker.id)
+                              setMarkerDropdownOpen(false)
+                            }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="marker-action delete"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteMarker(marker.id)
+                              // Only close dropdown on confirm delete if delete actually occurs
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <p className="dropdown-empty-msg">Your fish and lobster markers will appear here.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
       <section className="section storage-section"><p className="eyebrow">ROUTE STORAGE</p><div className="storage-actions"><button onClick={exportZip}>⇩ Export ZIP</button><button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button><input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden /></div></section>
       <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div><button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart' : 'Show depth chart'}</span></button></section>
       <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
