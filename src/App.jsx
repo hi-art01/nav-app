@@ -140,18 +140,40 @@ function Navigator() {
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
     } else {
-      // C-MAP style depth zone chart:
-      // 1. Esri World Ocean Base — pre-rendered depth ZONES (shallow=light, deep=dark blue), same colour logic as C-MAP/Navionics
-      const oceanBase = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 17, attribution: '© Esri, GEBCO, NOAA, National Geographic' }).addTo(map.current)
-      // 2. NOAA ENC depth soundings overlay (numbers, contour lines, dangers)
-      const chartLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', { layers: 'show:79,80,108,232', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.9, attribution: 'NOAA ENC' }).addTo(map.current)
-      // 3. Esri Ocean Reference — place names, labels on top of the depth zones
-      const oceanRef = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 17, opacity: 0.85, attribution: 'Esri Ocean Reference' }).addTo(map.current)
-      // 4. OpenSeaMap seamarks — buoys, lights, traffic separation schemes
-      const seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.9, attribution: 'OpenSeaMap' }).addTo(map.current)
-      tileLayers.current = [oceanBase, chartLayer, oceanRef, seamarkLayer]
+      // Nautical chart with actual depth SOUNDINGS (numbers), contour lines, hazards — no color shading.
+      //
+      // Base: CartoDB Positron (clean white/light-gray) — lets depth numbers be legible.
+      // Water areas appear white; land appears light gray.
+      const lightBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd', attribution: '© CartoDB'
+      }).addTo(map.current)
+
+      // NOAA ENC coastal chart (scale ~1:150 000 – 1:700 000) — depth soundings + contours at wide zoom
+      const encCoastal = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_coastal/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
+        opacity: 1.0, attribution: 'NOAA ENC Coastal'
+      }).addTo(map.current)
+
+      // NOAA ENC approach chart (scale ~1:22 000 – 1:150 000) — denser depth numbers
+      const encApproach = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
+        opacity: 1.0, attribution: 'NOAA ENC Approach'
+      }).addTo(map.current)
+
+      // NOAA ENC harbour chart (scale < 1:22 000) — fine-grained soundings for close-up navigation
+      const encHarbour = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_harbour/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
+        opacity: 1.0, attribution: 'NOAA ENC Harbour'
+      }).addTo(map.current)
+
+      // OpenSeaMap seamarks — buoys, lights, traffic separation on top
+      const seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+        maxZoom: 19, opacity: 0.9, attribution: 'OpenSeaMap'
+      }).addTo(map.current)
+
+      tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : 'C-MAP depth chart enabled')
+    setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA depth soundings chart enabled')
   }, [mapStyle])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
@@ -553,7 +575,7 @@ function Navigator() {
       <div className="map-top">
         <div>
           <span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : 'DEPTH CHART'}</span>
-          <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : 'C-MAP depth zones · NOAA soundings · seamarks'}</p>
+          <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : 'NOAA ENC depth soundings · contours · seamarks'}</p>
         </div>
         <button className="map-style-button" onClick={toggleMapStyle}>{mapStyle === 'satellite' ? '◈ Depth chart' : '▣ Satellite view'}</button>
         <button onClick={() => setMode('marker')}>＋ Add spot</button>
@@ -579,14 +601,14 @@ function Navigator() {
         </div>
       )}
 
-      {/* C-MAP style depth zone legend when nautical chart is active */}
+      {/* Sounding key shown when nautical chart is active */}
       {mapStyle === 'nautical' && (
         <div className="depth-legend-cmap">
-          <p>DEPTH ZONES</p>
-          <div className="depth-zone-bar"></div>
-          <div className="depth-zone-labels">
-            <span>0 ft</span><span>33</span><span>165</span><span>660</span><span>deep</span>
-          </div>
+          <p>CHART LEGEND</p>
+          <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Depth sounding (ft)</span></div>
+          <div className="sounding-key-row"><span className="sk-line"></span><span className="sk-label">Depth contour</span></div>
+          <div className="sounding-key-row"><span className="sk-mark">⬟</span><span className="sk-label">Seamark / buoy</span></div>
+          <p className="sk-note">Zoom in to see soundings</p>
         </div>
       )}
 

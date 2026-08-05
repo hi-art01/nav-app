@@ -48,12 +48,15 @@
 .relocate-button { display: block; width: 100%; margin-top: 13px; padding: 10px; border: 1px dashed #426266; border-radius: 6px; background: transparent; color: #6de5c8; font-size: 12px; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; }
 .relocate-button:hover { border-color: #45d9b6; background: #163c40; }
 
-/* ── C-MAP style depth zone legend ──────────────────────────────────────── */
-.depth-legend-cmap { position: absolute; z-index: 1000; left: 25px; bottom: 68px; background: #0b2224ee; border: 1px solid #426266; border-radius: 8px; padding: 10px 13px; min-width: 155px; }
+/* ── NOAA ENC chart legend / sounding key ────────────────────────────────── */
+.depth-legend-cmap { position: absolute; z-index: 1000; left: 25px; bottom: 68px; background: #0b2224ee; border: 1px solid #426266; border-radius: 8px; padding: 10px 13px; min-width: 175px; }
 .depth-legend-cmap p { margin: 0 0 7px; font: 9px 'DM Mono'; letter-spacing: 1.5px; color: #55dbbe; }
-/* Gradient matches Esri Ocean Base colour scheme: white/light-green shallow → deep navy */
-.depth-zone-bar { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #d9f1ea 0%, #a8d5cd 14%, #74b5c9 28%, #4a8bbf 44%, #2e6aac 60%, #1a4d8e 78%, #0f3270 100%); margin-bottom: 5px; }
-.depth-zone-labels { display: flex; justify-content: space-between; color: #7a9e9c; font: 8px 'DM Mono'; }
+.sounding-key-row { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; font-size: 10px; color: #cad8d7; }
+.sk-num { font: bold 11px 'DM Mono'; color: #1a1a6e; background: #fff; border-radius: 2px; padding: 1px 4px; min-width: 24px; text-align: center; }
+.sk-line { display: inline-block; width: 22px; height: 2px; background: #1a1a6e; border-radius: 1px; }
+.sk-mark { font-size: 12px; color: #2a5fa5; }
+.sk-label { color: #a0bcba; font-size: 10px; }
+.sk-note { margin: 5px 0 0; font: 9px 'DM Mono'; color: #6a8f8e; letter-spacing: 0; }
 
 @media (max-width: 720px) {
   .map-top { flex-wrap: wrap; gap: 7px; top: 10px; right: 10px; left: 10px; }
