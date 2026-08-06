@@ -177,23 +177,34 @@ function Navigator() {
 
       tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
     } else {
-      // The NOAA ENC WMS services render their complete layer tree when
-      // requested as layer 0. This is more reliable than enumerating hundreds
-      // of child layer IDs, and it includes charted soundings and contours.
-      const chartLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_harbour/MapServer/WMSServer', {
-        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
-        attribution: 'NOAA Office of Coast Survey'
-      }).addTo(map.current)
-      const approachLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', {
-        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
-        attribution: 'NOAA Office of Coast Survey'
-      }).addTo(map.current)
-      const coastalLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_coastal/MapServer/WMSServer', {
-        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
-        attribution: 'NOAA Office of Coast Survey'
-      }).addTo(map.current)
-      chartLayer.on('tileerror', () => setNotice('NOAA depth chart is temporarily unavailable'))
-      tileLayers.current = [chartLayer, approachLayer, coastalLayer]
+      // NOAA's Maritime Chart Service depth layer renders actual numeric
+      // soundings and contours. Request it through MapServer export because
+      // the public cached tiles do not contain the sounding labels.
+      const ChartLayer = L.GridLayer.extend({
+        createTile: function (coords, done) {
+          const tile = document.createElement('img')
+          tile.alt = ''
+          tile.setAttribute('role', 'presentation')
+          const size = this.getTileSize()
+          const mapRef = this._map
+          const nw = mapRef.unproject(coords.scaleBy(size), coords.z)
+          const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
+          const nw3857 = mapRef.options.crs.project(nw)
+          const se3857 = mapRef.options.crs.project(se)
+          const params = new URLSearchParams({
+            bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
+            bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
+            format: 'png32', transparent: 'false', layers: 'show:2', f: 'image'
+          })
+          tile.onload = () => done(null, tile)
+          tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
+          return tile
+        }
+      })
+      const chartLayer = new ChartLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA Office of Coast Survey' }).addTo(map.current)
+      chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
+      tileLayers.current = [chartLayer]
     }
     setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle])
