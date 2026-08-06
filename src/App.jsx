@@ -180,8 +180,10 @@ function Navigator() {
       // One cached NOAA chart layer is reliable and includes the actual ENC
       // sounding numbers and depth contours. The former WMS stack could fail
       // as a whole when any one of its hundreds of sublayers was unavailable.
-      const chartLayer = L.tileLayer('https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}', {
-        maxNativeZoom: 18,
+      const chartLayer = L.tileLayer('https://encdirect.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}', {
+        // NOAA publishes this cache through level 16; Leaflet will upscale it
+        // for closer views instead of requesting nonexistent level 17+ tiles.
+        maxNativeZoom: 16,
         maxZoom: 19,
         attribution: 'NOAA Office of Coast Survey'
       }).addTo(map.current)
