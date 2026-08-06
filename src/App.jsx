@@ -177,18 +177,23 @@ function Navigator() {
 
       tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
     } else {
-      // One cached NOAA chart layer is reliable and includes the actual ENC
-      // sounding numbers and depth contours. The former WMS stack could fail
-      // as a whole when any one of its hundreds of sublayers was unavailable.
-      const chartLayer = L.tileLayer('https://encdirect.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}', {
-        // NOAA publishes this cache through level 16; Leaflet will upscale it
-        // for closer views instead of requesting nonexistent level 17+ tiles.
-        maxNativeZoom: 16,
-        maxZoom: 19,
+      // The NOAA ENC WMS services render their complete layer tree when
+      // requested as layer 0. This is more reliable than enumerating hundreds
+      // of child layer IDs, and it includes charted soundings and contours.
+      const chartLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_harbour/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
         attribution: 'NOAA Office of Coast Survey'
       }).addTo(map.current)
-      chartLayer.on('tileerror', () => setNotice('NOAA depth chart tiles are temporarily unavailable'))
-      tileLayers.current = [chartLayer]
+      const approachLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
+        attribution: 'NOAA Office of Coast Survey'
+      }).addTo(map.current)
+      const coastalLayer = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_coastal/MapServer/WMSServer', {
+        layers: '0', format: 'image/png', transparent: true, version: '1.3.0',
+        attribution: 'NOAA Office of Coast Survey'
+      }).addTo(map.current)
+      chartLayer.on('tileerror', () => setNotice('NOAA depth chart is temporarily unavailable'))
+      tileLayers.current = [chartLayer, approachLayer, coastalLayer]
     }
     setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle])
