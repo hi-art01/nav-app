@@ -139,7 +139,7 @@ function Navigator() {
     const satellite = mapStyle === 'satellite'
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
-    } else {
+    } else if (mapStyle === 'legacy-wms') {
       // Nautical chart with actual depth SOUNDINGS (numbers), contour lines, hazards — no color shading.
       // Base: CartoDB Positron — clean white/light-gray, lets depth numbers be legible.
       const lightBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
@@ -176,8 +176,19 @@ function Navigator() {
       }).addTo(map.current)
 
       tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
+    } else {
+      // One cached NOAA chart layer is reliable and includes the actual ENC
+      // sounding numbers and depth contours. The former WMS stack could fail
+      // as a whole when any one of its hundreds of sublayers was unavailable.
+      const chartLayer = L.tileLayer('https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}', {
+        maxNativeZoom: 18,
+        maxZoom: 19,
+        attribution: 'NOAA Office of Coast Survey'
+      }).addTo(map.current)
+      chartLayer.on('tileerror', () => setNotice('NOAA depth chart tiles are temporarily unavailable'))
+      tileLayers.current = [chartLayer]
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA depth soundings chart enabled')
+    setNotice(satellite ? 'Satellite imagery enabled' : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
@@ -609,10 +620,10 @@ function Navigator() {
       {mapStyle === 'nautical' && (
         <div className="depth-legend-cmap">
           <p>CHART LEGEND</p>
-          <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Depth sounding (ft)</span></div>
+          <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Depth sounding (m)</span></div>
           <div className="sounding-key-row"><span className="sk-line"></span><span className="sk-label">Depth contour</span></div>
           <div className="sounding-key-row"><span className="sk-mark">⬟</span><span className="sk-label">Seamark / buoy</span></div>
-          <p className="sk-note">Zoom in to see soundings</p>
+          <p className="sk-note">Numbers are charted depths; zoom in to see more.</p>
         </div>
       )}
 
