@@ -179,12 +179,32 @@ function Navigator() {
 
       tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
     } else if (encChart) {
-      // NOAA ENC Online cached chart service: official Electronic
-      // Navigational Chart symbology, chart objects, soundings and aids.
-      const enc = L.tileLayer('https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19, attribution: 'NOAA ENC Online · Office of Coast Survey'
-      }).addTo(map.current)
-      enc.on('tileerror', () => setNotice('NOAA ENC chart tiles are temporarily unavailable'))
+      // NOAA ENC Online official chart symbology. Use dynamic export rather
+      // than the cached tile endpoint, which is intermittently unavailable.
+      const EncLayer = L.GridLayer.extend({
+        createTile: function (coords, done) {
+          const tile = document.createElement('img')
+          tile.alt = ''
+          tile.setAttribute('role', 'presentation')
+          const size = this.getTileSize()
+          const mapRef = this._map
+          const nw = mapRef.unproject(coords.scaleBy(size), coords.z)
+          const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
+          const nw3857 = mapRef.options.crs.project(nw)
+          const se3857 = mapRef.options.crs.project(se)
+          const params = new URLSearchParams({
+            bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
+            bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
+            format: 'png32', transparent: 'false', layers: 'show:0', f: 'image'
+          })
+          tile.onload = () => done(null, tile)
+          tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/export?${params}`
+          return tile
+        }
+      })
+      const enc = new EncLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA ENC Online · Office of Coast Survey' }).addTo(map.current)
+      enc.on('tileerror', () => setNotice('NOAA ENC chart export is temporarily unavailable'))
       tileLayers.current = [enc]
     } else if (southFloridaDetail) {
       // NOAA OceanReports bathymetric contours: a dedicated, clean contour
