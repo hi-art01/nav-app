@@ -195,11 +195,11 @@ function Navigator() {
           const params = new URLSearchParams({
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
-            format: 'png32', transparent: 'false', layers: 'show:0', f: 'image'
+            format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image'
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
-          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/export?${params}`
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
           return tile
         }
       })
