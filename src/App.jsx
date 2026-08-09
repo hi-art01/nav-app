@@ -196,7 +196,8 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
-            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
+            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 }),
+            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft'
           }
           const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
@@ -227,7 +228,8 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
-            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
+            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 }),
+            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft'
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
