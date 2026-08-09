@@ -138,7 +138,7 @@ function Navigator() {
     tileLayers.current.forEach((layer) => layer.remove())
     const satellite = mapStyle === 'satellite'
     const southFloridaDetail = mapStyle === 'south-florida'
-    const encChart = mapStyle === 'enc'
+    const encChart = mapStyle === 'enc' || mapStyle === 'enc-feet'
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
     } else if (mapStyle === 'legacy-wms') {
@@ -192,11 +192,17 @@ function Navigator() {
           const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
           const nw3857 = mapRef.options.crs.project(nw)
           const se3857 = mapRef.options.crs.project(se)
-          const params = new URLSearchParams({
+          const queryObj = {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image'
-          })
+          }
+          if (mapStyle === 'enc-feet') {
+            queryObj.customParameters = JSON.stringify({ DisplayDepthUnits: 2 })
+          } else {
+            queryObj.customParameters = JSON.stringify({ DisplayDepthUnits: 1 })
+          }
+          const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
           tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
@@ -267,7 +273,7 @@ function Navigator() {
       chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
       tileLayers.current = [chartLayer]
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : encChart ? 'NOAA ENC chart enabled — official navigational chart symbology' : southFloridaDetail ? 'South Florida contours enabled — zoom in for labeled depth changes' : 'NOAA chart enabled — zoom in for numeric depth soundings')
+    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? 'NOAA ENC chart (meters) enabled — official navigational chart symbology' : mapStyle === 'enc-feet' ? 'NOAA ENC chart (feet) enabled — official navigational chart symbology' : southFloridaDetail ? 'South Florida contours enabled — zoom in for labeled depth changes' : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
@@ -433,7 +439,7 @@ function Navigator() {
     })
   }
 
-  function toggleMapStyle() { setMapStyle((style) => style === 'satellite' ? 'nautical' : style === 'nautical' ? 'south-florida' : style === 'south-florida' ? 'enc' : 'satellite') }
+  function toggleMapStyle() { setMapStyle((style) => style === 'satellite' ? 'nautical' : style === 'nautical' ? 'south-florida' : style === 'south-florida' ? 'enc' : style === 'enc' ? 'enc-feet' : 'satellite') }
 
   function selectDestination(id) {
     activeDestinationRef.current = id
@@ -668,10 +674,16 @@ function Navigator() {
 
       <div className="map-top">
         <div>
-            <span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : mapStyle === 'south-florida' ? 'SOUTH FLORIDA DETAIL' : mapStyle === 'enc' ? 'NOAA ENC' : 'DEPTH CHART'}</span>
-            <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : mapStyle === 'south-florida' ? 'Keys bathymetric contours · labeled depth changes' : mapStyle === 'enc' ? 'Electronic Navigational Chart · official NOAA symbology' : 'NOAA ENC depth soundings · contours · seamarks'}</p>
+            <span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : mapStyle === 'south-florida' ? 'SOUTH FLORIDA DETAIL' : mapStyle === 'enc' ? 'NOAA ENC (METERS)' : mapStyle === 'enc-feet' ? 'NOAA ENC (FEET)' : 'DEPTH CHART'}</span>
+            <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : mapStyle === 'south-florida' ? 'Keys bathymetric contours · labeled depth changes' : (mapStyle === 'enc' || mapStyle === 'enc-feet') ? 'Electronic Navigational Chart · official NOAA symbology' : 'NOAA ENC depth soundings · contours · seamarks'}</p>
         </div>
-          <button className="map-style-button" onClick={toggleMapStyle}>{mapStyle === 'satellite' ? '◈ Depth chart' : mapStyle === 'nautical' ? '⌁ South Florida detail' : mapStyle === 'south-florida' ? '⌘ NOAA ENC chart' : '▣ Satellite view'}</button>
+          <button className="map-style-button" onClick={toggleMapStyle}>
+            {mapStyle === 'satellite' ? '◈ Depth chart' :
+             mapStyle === 'nautical' ? '⌁ South Florida detail' :
+             mapStyle === 'south-florida' ? '⌘ NOAA ENC (meters)' :
+             mapStyle === 'enc' ? '⌘ NOAA ENC (feet)' :
+             '▣ Satellite view'}
+          </button>
         <button onClick={() => setMode('marker')}>＋ Add spot</button>
         <button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button>
       </div>
@@ -712,10 +724,10 @@ function Navigator() {
             <p className="sk-note">NOAA contours show where depth changes; zoom in around the Keys for finer detail.</p>
           </div>
         )}
-        {mapStyle === 'enc' && (
+        {(mapStyle === 'enc' || mapStyle === 'enc-feet') && (
           <div className="depth-legend-cmap">
-            <p>NOAA ENC</p>
-            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding</span></div>
+            <p>NOAA ENC {mapStyle === 'enc-feet' ? '(FEET)' : '(METERS)'}</p>
+            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding {mapStyle === 'enc-feet' ? '(ft)' : '(m)'}</span></div>
             <div className="sounding-key-row"><span className="sk-mark">⚓</span><span className="sk-label">Navigation aid / feature</span></div>
             <p className="sk-note">Official NOAA Electronic Navigational Chart layers. Zoom in for chart detail.</p>
           </div>
