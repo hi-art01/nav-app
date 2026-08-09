@@ -60,12 +60,20 @@
 
 @media (max-width: 720px) {
   .map-top { flex-wrap: wrap; gap: 7px; top: 10px; right: 10px; left: 10px; }
+  .map-top { align-items: flex-start; }
   .map-top div { flex: 1 1 100%; }
-  .map-top button { padding: 9px 10px; font-size: 10px; }
-  .quick-actions { gap: 5px; }
-  .quick-actions button { padding: 9px 3px; font-size: 15px; }
-  .quick-actions button span { font-size: 9px; }
+  .map-top button { padding: 11px 12px; font-size: 13px; display: block; width: 100%; margin-bottom: 6px; }
+  .map-top .map-style-button { font-size: 12px; }
+  .map-top .heading-button { font-size: 12px; }
+  .quick-actions { gap: 8px; }
+  .quick-actions button { padding: 11px 10px; font-size: 16px; }
+  .quick-actions button span { font-size: 11px; }
   .storage-actions button { padding: 10px 5px; }
   .custom-zoom-controls { bottom: 15px; right: 15px; }
   .depth-legend-cmap { left: 15px; bottom: 58px; }
-}
+  .version-stamp { left: 8px; top: 8px; padding: 6px 8px; font-size: 11px; }
+} 
+
+/* Version stamp */
+.version-stamp { position: absolute; z-index: 1400; left: 16px; top: 16px; background: rgba(11,34,36,0.9); color: #9fead8; border: 1px solid #2f635f; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; box-shadow: 0 6px 18px #0008; }
+

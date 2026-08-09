@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import './App.css'
 import './layer-fix.css'
 import './heading.css'
+import pkg from '../package.json'
 
 const DEMO_POSITION = [27.6448, -82.5691]
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -197,7 +198,8 @@ function Navigator() {
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
             customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 }),
-            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft'
+            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft',
+            cb: Date.now()
           }
           const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
@@ -229,7 +231,8 @@ function Navigator() {
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
             customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 }),
-            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft'
+            noaaDepthUnits: noaaDepthUnits === 'meters' ? 'm' : 'ft',
+            cb: Date.now()
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
@@ -633,6 +636,7 @@ function Navigator() {
     </aside>
 
     <section className="map-area">
+      <div className="version-stamp">v{pkg.version}</div>
       {/* The rotating map div — zoom controls are NOT inside here so they don't rotate */}
       <div
         ref={mapNode}
