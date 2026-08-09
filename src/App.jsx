@@ -50,6 +50,7 @@ function Navigator() {
   const [followHeading, setFollowHeading] = useState(false)
   const [showDepthChart, setShowDepthChart] = useState(false)
   const [mapStyle, setMapStyle] = useState('satellite')
+  const [noaaDepthUnits, setNoaaDepthUnits] = useState(() => read('noaaDepthUnits', 'meters'))
   const [mapReady, setMapReady] = useState(false)
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
   const [editingMarker, setEditingMarker] = useState(null)
@@ -195,7 +196,7 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
-            customParameters: JSON.stringify({ DisplayDepthUnits: 1 })
+            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
           }
           const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
@@ -225,7 +226,8 @@ function Navigator() {
           const params = new URLSearchParams({
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
-            format: 'png32', transparent: 'false', layers: 'show:2', f: 'image'
+            format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
+            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
@@ -237,8 +239,8 @@ function Navigator() {
       chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
       tileLayers.current = [chartLayer]
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? 'NOAA ENC chart (meters) enabled — official navigational chart symbology' : 'NOAA chart enabled — zoom in for numeric depth soundings')
-  }, [mapStyle])
+    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? `NOAA ENC chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — official navigational chart symbology` : 'NOAA chart enabled — zoom in for numeric depth soundings')
+  }, [mapStyle, noaaDepthUnits])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
 
@@ -646,6 +648,9 @@ function Navigator() {
              mapStyle === 'nautical' ? '⌘ NOAA ENC' :
              '▣ Satellite view'}
           </button>
+          <button className="map-style-button" onClick={() => { const next = noaaDepthUnits === 'meters' ? 'feet' : 'meters'; setNoaaDepthUnits(next); store('noaaDepthUnits', next); setNotice(`Depth units: ${next}`); }}>
+            {noaaDepthUnits === 'meters' ? 'Units: m' : 'Units: ft'}
+          </button>
         <button onClick={() => setMode('marker')}>＋ Add spot</button>
         <button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button>
       </div>
@@ -673,7 +678,7 @@ function Navigator() {
         {mapStyle === 'nautical' && (
         <div className="depth-legend-cmap">
           <p>CHART LEGEND</p>
-          <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Depth sounding (m)</span></div>
+          <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Depth sounding ({noaaDepthUnits === 'meters' ? 'm' : 'ft'})</span></div>
           <div className="sounding-key-row"><span className="sk-line"></span><span className="sk-label">Depth contour</span></div>
           <div className="sounding-key-row"><span className="sk-mark">⬟</span><span className="sk-label">Seamark / buoy</span></div>
           <p className="sk-note">Numbers are charted depths; zoom in to see more.</p>
@@ -682,7 +687,7 @@ function Navigator() {
         {mapStyle === 'enc' && (
           <div className="depth-legend-cmap">
             <p>NOAA Electronic Navigational Chart</p>
-            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding (m)</span></div>
+            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding ({noaaDepthUnits === 'meters' ? 'm' : 'ft'})</span></div>
             <div className="sounding-key-row"><span className="sk-mark">⚓</span><span className="sk-label">Navigation aid / feature</span></div>
             <p className="sk-note">Official NOAA Electronic Navigational Chart layers. Zoom in for chart detail.</p>
           </div>
