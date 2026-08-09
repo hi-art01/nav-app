@@ -9,17 +9,11 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(`helm:${key}`)) ?? fallback } catch { return fallback } }
 const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify(value))
 
-/** ArcGIS Maritime Chart Service expects DisplayParameters.ECDISParameters.DynamicParameters. */
+/** Configure DisplayDepthUnits (1 for meters, 2 for feet) as JSON inside customParameters */
 function noaaExportCustomParameters(units) {
   const displayDepthUnits = units === 'meters' ? 1 : 2
   return JSON.stringify({
-    DisplayParameters: {
-      ECDISParameters: {
-        DynamicParameters: {
-          Parameter: [{ name: 'DisplayDepthUnits', value: displayDepthUnits }]
-        }
-      }
-    }
+    DisplayDepthUnits: displayDepthUnits
   })
 }
 
@@ -265,7 +259,7 @@ function Navigator() {
         try {
           map.current.invalidateSize()
           tileLayers.current.forEach((layer) => { if (layer && typeof layer.redraw === 'function') layer.redraw() })
-        } catch (e) { /* ignore */ }
+        } catch { /* ignore */ }
       }, 120)
     }
   }, [mapStyle, noaaDepthUnits, encRefresh])
@@ -526,7 +520,7 @@ function Navigator() {
       if (!map.current || !window.L) return
       console.log('Forcing full ENC layer recreate — removing existing grid layers')
       // remove tracked tileLayers
-      tileLayers.current.forEach((layer) => { try { layer.remove() } catch (e) {} })
+      tileLayers.current.forEach((layer) => { try { layer.remove() } catch {} })
       tileLayers.current = []
       // also remove any GridLayer instances directly on the map
       map.current.eachLayer((layer) => {
@@ -534,7 +528,7 @@ function Navigator() {
           if (window.L && layer instanceof window.L.GridLayer) {
             map.current.removeLayer(layer)
           }
-        } catch (e) { }
+        } catch {}
       })
       // small delay then bump encRefresh to trigger effect that recreates layers
       setNotice('Refreshing ENC layers…')
