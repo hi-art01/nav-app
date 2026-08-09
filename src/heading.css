@@ -2,6 +2,7 @@
 .heading-button { background: #12383b; color: #b9d7d4; border: 1px solid #426266; padding: 11px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .heading-button.active { background: #45d9b6; color: #06221f; border-color: #45d9b6; }
 .map-style-button { background: #12383b; color: #b9d7d4; border: 1px solid #426266; padding: 11px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.map-style-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .quick-actions button.adjusting { background: #45d9b6; color: #06221f; border-color: #45d9b6; }
 .depth-toggle { width: 100%; margin-top: 9px; padding: 9px 10px; border: 1px solid #2a5356; border-radius: 6px; background: #112e32; color: #afd0cd; font-size: 11px; text-align: left; }
 .depth-toggle.active { background: #163f40; border-color: #45d9b6; color: #6de5c8; }

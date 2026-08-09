@@ -9,6 +9,20 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(`helm:${key}`)) ?? fallback } catch { return fallback } }
 const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify(value))
 
+/** ArcGIS Maritime Chart Service expects DisplayParameters.ECDISParameters.DynamicParameters. */
+function noaaExportCustomParameters(units) {
+  const displayDepthUnits = units === 'meters' ? 1 : 2
+  return JSON.stringify({
+    DisplayParameters: {
+      ECDISParameters: {
+        DynamicParameters: {
+          Parameter: [{ name: 'DisplayDepthUnits', value: displayDepthUnits }]
+        }
+      }
+    }
+  })
+}
+
 function boatIcon(hdg) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" style="transform:rotate(${hdg}deg);transform-origin:14px 14px;display:block;overflow:visible"><polygon points="14,2 23,26 14,20 5,26" fill="#e7fffb" stroke="#001a17" stroke-width="1.5"/></svg>`
 }
@@ -196,7 +210,7 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
-            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
+            customParameters: noaaExportCustomParameters(noaaDepthUnits)
           }
           const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
@@ -227,7 +241,7 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
-            customParameters: JSON.stringify({ DisplayDepthUnits: noaaDepthUnits === 'meters' ? 1 : 2 })
+            customParameters: noaaExportCustomParameters(noaaDepthUnits)
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
@@ -238,6 +252,10 @@ function Navigator() {
       const chartLayer = new ChartLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA Office of Coast Survey' }).addTo(map.current)
       chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
       tileLayers.current = [chartLayer]
+    }
+    const chartGridLayer = tileLayers.current[0]
+    if (chartGridLayer && typeof chartGridLayer.redraw === 'function' && !satellite && mapStyle !== 'legacy-wms') {
+      chartGridLayer.redraw()
     }
     setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? `NOAA ENC chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — official navigational chart symbology` : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle, noaaDepthUnits])
@@ -648,7 +666,20 @@ function Navigator() {
              mapStyle === 'nautical' ? '⌘ NOAA ENC' :
              '▣ Satellite view'}
           </button>
-          <button className="map-style-button" onClick={() => { const next = noaaDepthUnits === 'meters' ? 'feet' : 'meters'; setNoaaDepthUnits(next); store('noaaDepthUnits', next); setNotice(`Depth units: ${next}`); }}>
+          <button
+            type="button"
+            className="map-style-button"
+            disabled={mapStyle === 'satellite'}
+            title={mapStyle === 'satellite' ? 'Switch to Depth chart or NOAA ENC to change sounding units' : undefined}
+            aria-label={mapStyle === 'satellite' ? 'Switch to Depth chart or NOAA ENC to change sounding units' : `Depth units: ${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}`}
+            onClick={() => {
+              if (mapStyle === 'satellite') return
+              const next = noaaDepthUnits === 'meters' ? 'feet' : 'meters'
+              setNoaaDepthUnits(next)
+              store('noaaDepthUnits', next)
+              setNotice(`Depth units: ${next}`)
+            }}
+          >
             {noaaDepthUnits === 'meters' ? 'Units: m' : 'Units: ft'}
           </button>
         <button onClick={() => setMode('marker')}>＋ Add spot</button>
