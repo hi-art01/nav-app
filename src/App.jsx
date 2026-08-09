@@ -65,6 +65,7 @@ function Navigator() {
   const [showDepthChart, setShowDepthChart] = useState(false)
   const [mapStyle, setMapStyle] = useState('satellite')
   const [noaaDepthUnits, setNoaaDepthUnits] = useState(() => read('noaaDepthUnits', 'meters'))
+  const [encRefresh, setEncRefresh] = useState(0)
   const [mapReady, setMapReady] = useState(false)
   const [draft, setDraft] = useState({ name: '', type: 'Fish spot', coords: null })
   const [editingMarker, setEditingMarker] = useState(null)
@@ -150,48 +151,41 @@ function Navigator() {
   useEffect(() => {
     if (!map.current || !window.L) return
     const L = window.L
+    console.log('Rebuilding map layers — mapStyle:', mapStyle, 'noaaDepthUnits:', noaaDepthUnits, 'encRefresh:', encRefresh)
     tileLayers.current.forEach((layer) => layer.remove())
     const satellite = mapStyle === 'satellite'
     const encChart = mapStyle === 'enc'
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
-    } else if (mapStyle === 'legacy-wms') {
-      // Nautical chart with actual depth SOUNDINGS (numbers), contour lines, hazards — no color shading.
-      // Base: CartoDB Positron — clean white/light-gray, lets depth numbers be legible.
-      const lightBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd', attribution: '© CartoDB'
-      }).addTo(map.current)
-
-      // Exact sub-layer ID lists from GetCapabilities — '0' is invalid for these ArcGIS WMS services.
-      // EXCEPTIONS=BLANK returns a transparent tile instead of the "not yet available" error image.
-
-      // NOAA ENC coastal — depth soundings, contours, nav marks at wide zoom (~1:150k–700k)
-      const ENC_COASTAL_LAYERS = '1,2,3,4,5,6,7,9,10,11,13,14,15,16,17,18,19,21,22,23,24,25,26,27,28,30,32,33,35,36,37,38,39,40,41,42,43,44,45,47,48,50,51,53,55,57,58,59,60,61,63,64,65,66,67,68,69,70,72,74,75,76,77,78,79,82,84,85,86,87,89,91,92,93,95,96,98,99,100,102,103,104,106,107,109,111,112,113,114,116,118,119,120,121,123,124,126,127,128,129,130,131,132,134,136,137,138,139,140,141,142,144,145,146,147,148,150,151,152,153,154,155,156,157,158,160,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176'
-      const encCoastal = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_coastal/MapServer/WMSServer', {
-        layers: ENC_COASTAL_LAYERS, format: 'image/png', transparent: true, version: '1.3.0',
-        EXCEPTIONS: 'BLANK', opacity: 1.0, attribution: 'NOAA ENC Coastal'
-      }).addTo(map.current)
-
-      // NOAA ENC approach — denser depth numbers at mid zoom (~1:22k–150k)
-      const ENC_APPROACH_LAYERS = '10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,137,138,165,232,235,236,237,238,239,240,241,242,243,244'
-      const encApproach = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_approach/MapServer/WMSServer', {
-        layers: ENC_APPROACH_LAYERS, format: 'image/png', transparent: true, version: '1.3.0',
-        EXCEPTIONS: 'BLANK', opacity: 1.0, attribution: 'NOAA ENC Approach'
-      }).addTo(map.current)
-
-      // NOAA ENC harbour — fine-grained soundings for close-up navigation (< 1:22k)
-      const ENC_HARBOUR_LAYERS = '1,2,3,4,5,6,7,8,10,11,12,13,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30,31,32,33,35,36,38,39,40,42,43,44,45,46,47,48,49,50,51,52,53,54,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,73,74,75,76,78,80,82,83,84,85,86,88,89,90,91,92,93,94,95,96,97,98,99,100,102,104,105,106,107,108,109,111,113,114,116,118,119,120,121,122,123,124,126,128,129,130,131,132,133,134,136,137,139,140,141,142,144,145,146,147,148,149,150,151,152,153,155,156,158,160,161,162,164,166,167,168,169,171,172,173,174,175,176,178,179,180,181,182,183,184,185,186,187,188,189,190,191,193,194,196,197,198,199,200,201,202,204,205,206,207,208,209,211,212,213,214,215,216,217,218,219,220,222,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239'
-      const encHarbour = L.tileLayer.wms('https://encdirect.noaa.gov/arcgis/services/encdirect/enc_harbour/MapServer/WMSServer', {
-        layers: ENC_HARBOUR_LAYERS, format: 'image/png', transparent: true, version: '1.3.0',
-        EXCEPTIONS: 'BLANK', opacity: 1.0, attribution: 'NOAA ENC Harbour'
-      }).addTo(map.current)
-
-      // OpenSeaMap seamarks — buoys, lights, traffic separation on top
-      const seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-        maxZoom: 19, opacity: 0.9, attribution: 'OpenSeaMap'
-      }).addTo(map.current)
-
-      tileLayers.current = [lightBase, encCoastal, encApproach, encHarbour, seamarkLayer]
+    } else if (mapStyle === 'nautical') {
+      // Use NOAA ENCOnline export for the nautical depth chart so unit switching works reliably.
+      const ChartLayer = L.GridLayer.extend({
+        createTile: function (coords, done) {
+          const tile = document.createElement('img')
+          tile.alt = ''
+          tile.setAttribute('role', 'presentation')
+          const size = this.getTileSize()
+          const mapRef = this._map
+          const nw = mapRef.unproject(coords.scaleBy(size), coords.z)
+          const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
+          const nw3857 = mapRef.options.crs.project(nw)
+          const se3857 = mapRef.options.crs.project(se)
+          const params = new URLSearchParams({
+            bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
+            bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
+            format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
+            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            cacheBust: Date.now()
+          })
+          tile.onload = () => done(null, tile)
+          tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
+          return tile
+        }
+      })
+      const chartLayer = new ChartLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA Office of Coast Survey' }).addTo(map.current)
+      chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
+      tileLayers.current = [chartLayer]
     } else if (encChart) {
       // NOAA ENC Online official chart symbology. Use dynamic export rather
       // than the cached tile endpoint, which is intermittently unavailable.
@@ -210,12 +204,15 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
-            customParameters: noaaExportCustomParameters(noaaDepthUnits)
+            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            cacheBust: Date.now()
           }
           const params = new URLSearchParams(queryObj)
+          const fullUrl = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params.toString()}`
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
-          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
+          console.log('NOAA ENC export URL', params.toString(), 'units', noaaDepthUnits)
+          tile.src = fullUrl
           return tile
         }
       })
@@ -241,7 +238,8 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
-            customParameters: noaaExportCustomParameters(noaaDepthUnits)
+            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            cacheBust: Date.now()
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
@@ -254,11 +252,23 @@ function Navigator() {
       tileLayers.current = [chartLayer]
     }
     const chartGridLayer = tileLayers.current[0]
-    if (chartGridLayer && typeof chartGridLayer.redraw === 'function' && !satellite && mapStyle !== 'legacy-wms') {
+    if (chartGridLayer && typeof chartGridLayer.redraw === 'function' && !satellite && mapStyle !== 'nautical') {
       chartGridLayer.redraw()
     }
     setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? `NOAA ENC chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — official navigational chart symbology` : 'NOAA chart enabled — zoom in for numeric depth soundings')
-  }, [mapStyle, noaaDepthUnits])
+
+    // Ensure Leaflet updates for the actual container size and requests all tiles.
+    // This addresses partial/half-page tile rendering when the map container dimensions change or transforms are applied.
+    if (map.current) {
+      // Slight delay lets DOM layout settle after react renders
+      setTimeout(() => {
+        try {
+          map.current.invalidateSize()
+          tileLayers.current.forEach((layer) => { if (layer && typeof layer.redraw === 'function') layer.redraw() })
+        } catch (e) { /* ignore */ }
+      }, 120)
+    }
+  }, [mapStyle, noaaDepthUnits, encRefresh])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
 
@@ -509,6 +519,29 @@ function Navigator() {
   const depthPoints = markers.filter((marker) => Number.isFinite(Number(marker.depth)) && Number(marker.depth) > 0).sort((a, b) => Number(a.depth) - Number(b.depth))
   const maxDepth = Math.max(...depthPoints.map((marker) => Number(marker.depth)), 1)
 
+
+  // Force fully remove any ENC/Chart grid layers and recreate them.
+  function forceRecreateEncLayers() {
+    try {
+      if (!map.current || !window.L) return
+      console.log('Forcing full ENC layer recreate — removing existing grid layers')
+      // remove tracked tileLayers
+      tileLayers.current.forEach((layer) => { try { layer.remove() } catch (e) {} })
+      tileLayers.current = []
+      // also remove any GridLayer instances directly on the map
+      map.current.eachLayer((layer) => {
+        try {
+          if (window.L && layer instanceof window.L.GridLayer) {
+            map.current.removeLayer(layer)
+          }
+        } catch (e) { }
+      })
+      // small delay then bump encRefresh to trigger effect that recreates layers
+      setNotice('Refreshing ENC layers…')
+      setTimeout(() => setEncRefresh((n) => n + 1), 80)
+    } catch (e) { console.error('forceRecreateEncLayers error', e) }
+  }
+
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">⌁</div><div><b>HELM</b><small>MARINE NAVIGATION</small></div></div>
@@ -675,9 +708,16 @@ function Navigator() {
             onClick={() => {
               if (mapStyle === 'satellite') return
               const next = noaaDepthUnits === 'meters' ? 'feet' : 'meters'
-              setNoaaDepthUnits(next)
-              store('noaaDepthUnits', next)
-              setNotice(`Depth units: ${next}`)
+            console.log('Units button clicked, next units:', next, 'current mapStyle:', mapStyle)
+            setNoaaDepthUnits(next)
+            // force recreation of ENC/export layers in case the provider cached or did not re-export
+            store('noaaDepthUnits', next)
+            setNotice(`Depth units: ${next}`)
+            // aggressively remove & recreate layers
+            forceRecreateEncLayers()
+            // Aggressive recreate requested; do not reload or switch map style — let layers be rebuilt in-place
+            console.log('Requested ENC layer recreate')
+            setNotice('Refreshing ENC layers…')
             }}
           >
             {noaaDepthUnits === 'meters' ? 'Units: m' : 'Units: ft'}
