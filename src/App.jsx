@@ -137,7 +137,6 @@ function Navigator() {
     const L = window.L
     tileLayers.current.forEach((layer) => layer.remove())
     const satellite = mapStyle === 'satellite'
-    const southFloridaDetail = mapStyle === 'south-florida'
     const encChart = mapStyle === 'enc'
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
@@ -192,11 +191,13 @@ function Navigator() {
           const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
           const nw3857 = mapRef.options.crs.project(nw)
           const se3857 = mapRef.options.crs.project(se)
-          const params = new URLSearchParams({
+          const queryObj = {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
-            format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image'
-          })
+            format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
+            customParameters: JSON.stringify({ DisplayDepthUnits: 1 })
+          }
+          const params = new URLSearchParams(queryObj)
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
           tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
@@ -206,37 +207,6 @@ function Navigator() {
       const enc = new EncLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA ENC Online · Office of Coast Survey' }).addTo(map.current)
       enc.on('tileerror', () => setNotice('NOAA ENC chart export is temporarily unavailable'))
       tileLayers.current = [enc]
-    } else if (southFloridaDetail) {
-      // NOAA OceanReports bathymetric contours: a dedicated, clean contour
-      // overlay for the Keys and South Florida (rather than a color ramp).
-      const base = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd', attribution: '© CartoDB'
-      }).addTo(map.current)
-      const ContourLayer = L.GridLayer.extend({
-        createTile: function (coords, done) {
-          const tile = document.createElement('img')
-          tile.alt = ''
-          tile.setAttribute('role', 'presentation')
-          const size = this.getTileSize()
-          const mapRef = this._map
-          const nw = mapRef.unproject(coords.scaleBy(size), coords.z)
-          const se = mapRef.unproject(coords.add([1, 1]).scaleBy(size), coords.z)
-          const nw3857 = mapRef.options.crs.project(nw)
-          const se3857 = mapRef.options.crs.project(se)
-          const params = new URLSearchParams({
-            bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
-            bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
-            format: 'png32', transparent: 'true', layers: 'show:0', f: 'image'
-          })
-          tile.onload = () => done(null, tile)
-          tile.onerror = () => done(new Error('South Florida contour export failed'), tile)
-          tile.src = `https://coast.noaa.gov/arcgis/rest/services/OceanReports/BathymetricContours/MapServer/export?${params}`
-          return tile
-        }
-      })
-      const contours = new ContourLayer({ tileSize: 256, maxZoom: 19, attribution: 'NOAA OceanReports bathymetric contours' }).addTo(map.current)
-      contours.on('tileerror', () => setNotice('South Florida contour layer is temporarily unavailable'))
-      tileLayers.current = [base, contours]
     } else {
       // NOAA's Maritime Chart Service depth layer renders actual numeric
       // soundings and contours. Request it through MapServer export because
@@ -267,7 +237,7 @@ function Navigator() {
       chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
       tileLayers.current = [chartLayer]
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : encChart ? 'NOAA ENC chart enabled — official navigational chart symbology' : southFloridaDetail ? 'South Florida contours enabled — zoom in for labeled depth changes' : 'NOAA chart enabled — zoom in for numeric depth soundings')
+    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? 'NOAA ENC chart (meters) enabled — official navigational chart symbology' : 'NOAA chart enabled — zoom in for numeric depth soundings')
   }, [mapStyle])
 
   const selectedTrip = useMemo(() => activeDestination ? trips.find((trip) => trip.destinationId === activeDestination) : null, [trips, activeDestination])
@@ -433,7 +403,7 @@ function Navigator() {
     })
   }
 
-  function toggleMapStyle() { setMapStyle((style) => style === 'satellite' ? 'nautical' : style === 'nautical' ? 'south-florida' : style === 'south-florida' ? 'enc' : 'satellite') }
+  function toggleMapStyle() { setMapStyle((style) => style === 'satellite' ? 'nautical' : style === 'nautical' ? 'enc' : 'satellite') }
 
   function selectDestination(id) {
     activeDestinationRef.current = id
@@ -668,10 +638,14 @@ function Navigator() {
 
       <div className="map-top">
         <div>
-            <span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : mapStyle === 'south-florida' ? 'SOUTH FLORIDA DETAIL' : mapStyle === 'enc' ? 'NOAA ENC' : 'DEPTH CHART'}</span>
-            <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : mapStyle === 'south-florida' ? 'Keys bathymetric contours · labeled depth changes' : mapStyle === 'enc' ? 'Electronic Navigational Chart · official NOAA symbology' : 'NOAA ENC depth soundings · contours · seamarks'}</p>
+            <span className="map-label">{mapStyle === 'satellite' ? 'SATELLITE' : mapStyle === 'enc' ? 'NOAA ENC' : 'DEPTH CHART'}</span>
+            <p>{followHeading ? `HEADING ${Math.round(heading)}° · COMPASS FOLLOWING` : mapStyle === 'satellite' ? 'Live marine overview' : mapStyle === 'enc' ? 'Electronic Navigational Chart · official NOAA symbology' : 'NOAA ENC depth soundings · contours · seamarks'}</p>
         </div>
-          <button className="map-style-button" onClick={toggleMapStyle}>{mapStyle === 'satellite' ? '◈ Depth chart' : mapStyle === 'nautical' ? '⌁ South Florida detail' : mapStyle === 'south-florida' ? '⌘ NOAA ENC chart' : '▣ Satellite view'}</button>
+          <button className="map-style-button" onClick={toggleMapStyle}>
+            {mapStyle === 'satellite' ? '◈ Depth chart' :
+             mapStyle === 'nautical' ? '⌘ NOAA ENC' :
+             '▣ Satellite view'}
+          </button>
         <button onClick={() => setMode('marker')}>＋ Add spot</button>
         <button className={followHeading ? 'heading-button active' : 'heading-button'} onClick={toggleHeading}>{followHeading ? '✦ North-up' : '✧ Follow heading'}</button>
       </div>
@@ -705,17 +679,10 @@ function Navigator() {
           <p className="sk-note">Numbers are charted depths; zoom in to see more.</p>
         </div>
         )}
-        {mapStyle === 'south-florida' && (
-          <div className="depth-legend-cmap">
-            <p>SOUTH FLORIDA DETAIL</p>
-            <div className="sounding-key-row"><span className="sk-line"></span><span className="sk-label">Bathymetric contour</span></div>
-            <p className="sk-note">NOAA contours show where depth changes; zoom in around the Keys for finer detail.</p>
-          </div>
-        )}
         {mapStyle === 'enc' && (
           <div className="depth-legend-cmap">
-            <p>NOAA ENC</p>
-            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding</span></div>
+            <p>NOAA Electronic Navigational Chart</p>
+            <div className="sounding-key-row"><span className="sk-num">14</span><span className="sk-label">Charted sounding (m)</span></div>
             <div className="sounding-key-row"><span className="sk-mark">⚓</span><span className="sk-label">Navigation aid / feature</span></div>
             <p className="sk-note">Official NOAA Electronic Navigational Chart layers. Zoom in for chart detail.</p>
           </div>
