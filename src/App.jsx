@@ -537,19 +537,116 @@ function Navigator() {
     } catch (e) { console.error('forceRecreateEncLayers error', e) }
   }
 
-  return <main className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">⌁</div><div><b>HELM</b><small>MARINE NAVIGATION</small></div></div>
+  const [fabPos, setFabPos] = useState(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const fabDragRef = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false })
+
+  function handleFabPointerDown(e) {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const rect = e.currentTarget.getBoundingClientRect()
+    fabDragRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: rect.left,
+      initialY: rect.top,
+      moved: false
+    }
+  }
+
+  function handleFabPointerMove(e) {
+    if (!fabDragRef.current.isDragging) return
+    const dx = e.clientX - fabDragRef.current.startX
+    const dy = e.clientY - fabDragRef.current.startY
+    if (Math.hypot(dx, dy) > 5) {
+      fabDragRef.current.moved = true
+      const maxRight = (window.innerWidth || document.documentElement.clientWidth) - 62
+      const maxBottom = (window.innerHeight || document.documentElement.clientHeight) - 62
+      const nextX = Math.max(10, Math.min(maxRight, fabDragRef.current.initialX + dx))
+      const nextY = Math.max(10, Math.min(maxBottom, fabDragRef.current.initialY + dy))
+      setFabPos({ x: nextX, y: nextY })
+    }
+  }
+
+  function handleFabPointerUp(e) {
+    if (!fabDragRef.current.isDragging) return
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {}
+    if (!fabDragRef.current.moved) {
+      setDrawerOpen((prev) => !prev)
+    }
+    fabDragRef.current.isDragging = false
+  }
+
+  const renderUtilityControls = (isDrawer = false) => (
+    <>
+      {isDrawer ? (
+        <div className="drawer-header">
+          <div className="brand">
+            <div className="brand-mark">⌁</div>
+            <div><b>HELM</b><small>NAVIGATION UTILITIES</small></div>
+          </div>
+          <button type="button" className="drawer-close" aria-label="Close drawer" onClick={() => setDrawerOpen(false)}>×</button>
+        </div>
+      ) : (
+        <div className="brand">
+          <div className="brand-mark">⌁</div>
+          <div><b>HELM</b><small>MARINE NAVIGATION</small></div>
+        </div>
+      )}
+
       <div className="status"><span className={tracking ? 'live-dot' : ''}></span>{notice}</div>
-      <section><p className="eyebrow">YOUR VOYAGE</p><h1>{active ? active.name : 'No destination set'}</h1><p className="subtle">{active ? `${selectedTrip?.points.length || 0} recorded waypoints` : 'Select a saved location to begin'}</p>
+
+      <section>
+        <p className="eyebrow">YOUR VOYAGE</p>
+        <h1>{active ? active.name : 'No destination set'}</h1>
+        <p className="subtle">{active ? `${selectedTrip?.points.length || 0} recorded waypoints` : 'Select a saved location to begin'}</p>
         <button
           className={tracking ? 'primary recording' : 'primary'}
-          onClick={toggleTracking}
+          onClick={() => { toggleTracking(); if (isDrawer && tracking) setDrawerOpen(false); }}
           disabled={acquiringGPS}
         >
           {acquiringGPS ? '⌛  Obtaining GPS lock…' : tracking ? '■  End & save track' : '▶  Start trip tracking'}
         </button>
       </section>
+
+      <section className="section">
+        <p className="eyebrow">CHART & DISPLAY</p>
+        <div className="drawer-controls-row">
+          <button
+            type="button"
+            className="drawer-chip"
+            onClick={toggleMapStyle}
+          >
+            {mapStyle === 'satellite' ? '◈ Style: Satellite' : mapStyle === 'nautical' ? '⌘ Style: Depth Chart' : '▣ Style: NOAA ENC'}
+          </button>
+          <button
+            type="button"
+            className="drawer-chip"
+            disabled={mapStyle === 'satellite'}
+            onClick={() => {
+              if (mapStyle === 'satellite') return
+              const next = noaaDepthUnits === 'meters' ? 'feet' : 'meters'
+              setNoaaDepthUnits(next)
+              store('noaaDepthUnits', next)
+              setNotice(`Depth units: ${next}`)
+              forceRecreateEncLayers()
+            }}
+          >
+            {noaaDepthUnits === 'meters' ? 'Units: Meters (m)' : 'Units: Feet (ft)'}
+          </button>
+        </div>
+        <div className="drawer-controls-row" style={{ marginTop: '8px' }}>
+          <button
+            type="button"
+            className={followHeading ? 'drawer-chip active' : 'drawer-chip'}
+            onClick={toggleHeading}
+          >
+            {followHeading ? '✦ Compass: Follow course' : '✧ Compass: North-up'}
+          </button>
+        </div>
+      </section>
+
       <section className="section" ref={destDropdownRef}>
         <p className="eyebrow">DESTINATIONS</p>
         <div className="custom-dropdown">
@@ -574,7 +671,7 @@ function Navigator() {
                       key={d.id}
                       type="button"
                       className={activeDestination === d.id ? 'dropdown-item active' : 'dropdown-item'}
-                      onClick={() => selectDestination(d.id)}
+                      onClick={() => { selectDestination(d.id); if (isDrawer) setDrawerOpen(false); }}
                     >
                       <span>◆</span>
                       <div>
@@ -590,7 +687,7 @@ function Navigator() {
               <button
                 type="button"
                 className="dropdown-add-btn"
-                onClick={() => { setMode('destination'); setDestDropdownOpen(false) }}
+                onClick={() => { setMode('destination'); setDestDropdownOpen(false); if (isDrawer) setDrawerOpen(false); }}
               >
                 ＋ Add destination
               </button>
@@ -628,6 +725,7 @@ function Navigator() {
                           onClick={() => {
                             map.current?.flyTo(marker.coords, 16)
                             setMarkerDropdownOpen(false)
+                            if (isDrawer) setDrawerOpen(false)
                           }}
                         >
                           <span>{emoji}</span>
@@ -644,6 +742,7 @@ function Navigator() {
                               e.stopPropagation()
                               editMarker(marker.id)
                               setMarkerDropdownOpen(false)
+                              if (isDrawer) setDrawerOpen(false)
                             }}
                           >
                             ✎
@@ -654,7 +753,6 @@ function Navigator() {
                             onClick={(e) => {
                               e.stopPropagation()
                               deleteMarker(marker.id)
-                              // Only close dropdown on confirm delete if delete actually occurs
                             }}
                           >
                             ×
@@ -671,10 +769,59 @@ function Navigator() {
           )}
         </div>
       </section>
-      <section className="section storage-section"><p className="eyebrow">ROUTE STORAGE</p><div className="storage-actions"><button onClick={exportZip}>⇩ Export ZIP</button><button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button><input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden /></div></section>
-      <section className="section"><p className="eyebrow">QUICK ACTIONS</p><div className="quick-actions"><button onClick={() => setMode('marker')}>🐟<span>Drop marker</span></button><button onClick={locate}>◎<span>My location</span></button><button className={adjustingPosition ? 'adjusting' : ''} onClick={togglePositionAdjustment}>⌖<span>Adjust position</span></button></div><button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart' : 'Show depth chart'}</span></button></section>
-      <footer><span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span><span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span></footer>
+
+      <section className="section">
+        <p className="eyebrow">QUICK ACTIONS</p>
+        <div className="quick-actions">
+          <button onClick={() => { setMode('marker'); if (isDrawer) setDrawerOpen(false); }}>🐟<span>Drop spot</span></button>
+          <button onClick={() => { locate(); if (isDrawer) setDrawerOpen(false); }}>◎<span>My location</span></button>
+          <button className={adjustingPosition ? 'adjusting' : ''} onClick={() => { togglePositionAdjustment(); if (isDrawer) setDrawerOpen(false); }}>⌖<span>Adjust spot</span></button>
+        </div>
+        <button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart reports' : 'Show depth chart reports'}</span></button>
+      </section>
+
+      <section className="section storage-section">
+        <p className="eyebrow">ROUTE STORAGE</p>
+        <div className="storage-actions">
+          <button onClick={exportZip}>⇩ Export ZIP</button>
+          <button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button>
+          <input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden />
+        </div>
+      </section>
+
+      <footer>
+        <span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span>
+        <span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span>
+      </footer>
+    </>
+  )
+
+  return <main className="app-shell">
+    <aside className="sidebar">
+      {renderUtilityControls(false)}
     </aside>
+    <button
+      type="button"
+      className={`fab-circle${drawerOpen ? ' active' : ''}`}
+      style={fabPos ? { left: `${fabPos.x}px`, top: `${fabPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+      onPointerDown={handleFabPointerDown}
+      onPointerMove={handleFabPointerMove}
+      onPointerUp={handleFabPointerUp}
+      aria-label="Open Navigation Utilities"
+      title="Drag to reposition · Tap to open utilities menu"
+    >
+      <span className="fab-mark">⌁</span>
+      <small>MENU</small>
+      <span className={tracking ? 'fab-dot live' : 'fab-dot'}></span>
+    </button>
+
+    {drawerOpen && (
+      <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)}>
+        <aside className="utility-drawer" onClick={(e) => e.stopPropagation()}>
+          {renderUtilityControls(true)}
+        </aside>
+      </div>
+    )}
 
     <section className="map-area">
       {/* The rotating map div — zoom controls are NOT inside here so they don't rotate */}
