@@ -9,15 +9,13 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(`helm:${key}`)) ?? fallback } catch { return fallback } }
 const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify(value))
 
-/** ArcGIS Maritime Chart Service expects DisplayParameters.ECDISParameters.DynamicParameters. */
-function noaaExportCustomParameters(units) {
+/** ArcGIS Maritime Chart Service expects display_params query parameter. */
+function noaaExportDisplayParams(units) {
   const displayDepthUnits = units === 'meters' ? 1 : 2
   return JSON.stringify({
-    DisplayParameters: {
-      ECDISParameters: {
-        DynamicParameters: {
-          Parameter: [{ name: 'DisplayDepthUnits', value: displayDepthUnits }]
-        }
+    ECDISParameters: {
+      DynamicParameters: {
+        Parameter: [{ name: 'DisplayDepthUnits', value: displayDepthUnits }]
       }
     }
   })
@@ -158,7 +156,7 @@ function Navigator() {
     if (satellite) {
       tileLayers.current = [L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }).addTo(map.current)]
     } else if (mapStyle === 'nautical') {
-      // Use NOAA ENCOnline export for the nautical depth chart so unit switching works reliably.
+      // Use NOAA NOAAChartDisplay export for the nautical depth chart so unit switching works.
       const ChartLayer = L.GridLayer.extend({
         createTile: function (coords, done) {
           const tile = document.createElement('img')
@@ -174,12 +172,12 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
-            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            display_params: noaaExportDisplayParams(noaaDepthUnits),
             cacheBust: Date.now()
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
-          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
           return tile
         }
       })
@@ -187,8 +185,7 @@ function Navigator() {
       chartLayer.on('tileerror', () => setNotice('NOAA depth soundings are temporarily unavailable'))
       tileLayers.current = [chartLayer]
     } else if (encChart) {
-      // NOAA ENC Online official chart symbology. Use dynamic export rather
-      // than the cached tile endpoint, which is intermittently unavailable.
+      // NOAA ENC official chart symbology. Use dynamic NOAAChartDisplay export.
       const EncLayer = L.GridLayer.extend({
         createTile: function (coords, done) {
           const tile = document.createElement('img')
@@ -204,11 +201,11 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:0,1,2,3,4,5,6,7', f: 'image',
-            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            display_params: noaaExportDisplayParams(noaaDepthUnits),
             cacheBust: Date.now()
           }
           const params = new URLSearchParams(queryObj)
-          const fullUrl = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params.toString()}`
+          const fullUrl = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?${params.toString()}`
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA ENC export failed'), tile)
           console.log('NOAA ENC export URL', params.toString(), 'units', noaaDepthUnits)
@@ -220,9 +217,7 @@ function Navigator() {
       enc.on('tileerror', () => setNotice('NOAA ENC chart export is temporarily unavailable'))
       tileLayers.current = [enc]
     } else {
-      // NOAA's Maritime Chart Service depth layer renders actual numeric
-      // soundings and contours. Request it through MapServer export because
-      // the public cached tiles do not contain the sounding labels.
+      // NOAA's Maritime Chart Service depth layer renders actual numeric soundings.
       const ChartLayer = L.GridLayer.extend({
         createTile: function (coords, done) {
           const tile = document.createElement('img')
@@ -238,12 +233,12 @@ function Navigator() {
             bbox: `${nw3857.x},${se3857.y},${se3857.x},${nw3857.y}`,
             bboxSR: '3857', imageSR: '3857', size: `${size.x},${size.y}`,
             format: 'png32', transparent: 'false', layers: 'show:2', f: 'image',
-            customParameters: noaaExportCustomParameters(noaaDepthUnits),
+            display_params: noaaExportDisplayParams(noaaDepthUnits),
             cacheBust: Date.now()
           })
           tile.onload = () => done(null, tile)
           tile.onerror = () => done(new Error('NOAA sounding export failed'), tile)
-          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
+          tile.src = `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?${params}`
           return tile
         }
       })
@@ -252,10 +247,10 @@ function Navigator() {
       tileLayers.current = [chartLayer]
     }
     const chartGridLayer = tileLayers.current[0]
-    if (chartGridLayer && typeof chartGridLayer.redraw === 'function' && !satellite && mapStyle !== 'nautical') {
+    if (chartGridLayer && typeof chartGridLayer.redraw === 'function' && !satellite) {
       chartGridLayer.redraw()
     }
-    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? `NOAA ENC chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — official navigational chart symbology` : 'NOAA chart enabled — zoom in for numeric depth soundings')
+    setNotice(satellite ? 'Satellite imagery enabled' : mapStyle === 'enc' ? `NOAA ENC chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — official navigational chart symbology` : `NOAA chart (${noaaDepthUnits === 'meters' ? 'meters' : 'feet'}) enabled — zoom in for numeric depth soundings`)
 
     // Ensure Leaflet updates for the actual container size and requests all tiles.
     // This addresses partial/half-page tile rendering when the map container dimensions change or transforms are applied.
