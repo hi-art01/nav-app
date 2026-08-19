@@ -539,7 +539,7 @@ function Navigator() {
 
   const [fabPos, setFabPos] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const fabDragRef = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false })
+  const fabDragRef = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false, suppressClick: false })
 
   function handleFabPointerDown(e) {
     e.preventDefault()
@@ -551,7 +551,8 @@ function Navigator() {
       startY: e.clientY,
       initialX: rect.left,
       initialY: rect.top,
-      moved: false
+      moved: false,
+      suppressClick: false
     }
   }
 
@@ -572,10 +573,18 @@ function Navigator() {
   function handleFabPointerUp(e) {
     if (!fabDragRef.current.isDragging) return
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {}
-    if (!fabDragRef.current.moved) {
-      setDrawerOpen((prev) => !prev)
-    }
+    // Let the button's click event handle activation. This is more reliable for
+    // touch browsers than relying on pointerup to open the drawer.
+    fabDragRef.current.suppressClick = fabDragRef.current.moved
     fabDragRef.current.isDragging = false
+  }
+
+  function handleFabClick() {
+    if (fabDragRef.current.suppressClick) {
+      fabDragRef.current.suppressClick = false
+      return
+    }
+    setDrawerOpen((prev) => !prev)
   }
 
   const renderUtilityControls = (isDrawer = false) => (
@@ -807,6 +816,7 @@ function Navigator() {
       onPointerDown={handleFabPointerDown}
       onPointerMove={handleFabPointerMove}
       onPointerUp={handleFabPointerUp}
+      onClick={handleFabClick}
       aria-label="Open Navigation Utilities"
       title="Drag to reposition · Tap to open utilities menu"
     >
