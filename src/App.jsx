@@ -539,6 +539,7 @@ function Navigator() {
 
   const [fabPos, setFabPos] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [expandedCategory, setExpandedCategory] = useState('voyage')
   const fabDragRef = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false, suppressClick: false })
 
   function handleFabPointerDown(e) {
@@ -587,8 +588,24 @@ function Navigator() {
     setDrawerOpen((prev) => !prev)
   }
 
-  const renderUtilityControls = (isDrawer = false) => (
-    <>
+  const renderUtilityControls = (isDrawer = false) => {
+    const category = (id, label, content) => isDrawer ? (
+      <section className="drawer-category" key={id}>
+        <button
+          type="button"
+          className="drawer-category-toggle"
+          aria-expanded={expandedCategory === id}
+          onClick={() => setExpandedCategory((current) => current === id ? null : id)}
+        >
+          <span>{label}</span>
+          <span className="drawer-category-arrow">{expandedCategory === id ? '−' : '+'}</span>
+        </button>
+        {expandedCategory === id && <div className="drawer-category-content">{content}</div>}
+      </section>
+    ) : content
+
+    return (
+      <>
       {isDrawer ? (
         <div className="drawer-header">
           <div className="brand">
@@ -606,7 +623,7 @@ function Navigator() {
 
       <div className="status"><span className={tracking ? 'live-dot' : ''}></span>{notice}</div>
 
-      <section>
+      {category('voyage', 'YOUR VOYAGE', <section>
         <p className="eyebrow">YOUR VOYAGE</p>
         <h1>{active ? active.name : 'No destination set'}</h1>
         <p className="subtle">{active ? `${selectedTrip?.points.length || 0} recorded waypoints` : 'Select a saved location to begin'}</p>
@@ -617,9 +634,9 @@ function Navigator() {
         >
           {acquiringGPS ? '⌛  Obtaining GPS lock…' : tracking ? '■  End & save track' : '▶  Start trip tracking'}
         </button>
-      </section>
+      </section>)}
 
-      <section className="section">
+      {category('chart', 'CHART & DISPLAY', <section className="section">
         <p className="eyebrow">CHART & DISPLAY</p>
         <div className="drawer-controls-row">
           <button
@@ -654,9 +671,9 @@ function Navigator() {
             {followHeading ? '✦ Compass: Follow course' : '✧ Compass: North-up'}
           </button>
         </div>
-      </section>
+      </section>)}
 
-      <section className="section" ref={destDropdownRef}>
+      {category('destinations', 'DESTINATIONS', <section className="section" ref={destDropdownRef}>
         <p className="eyebrow">DESTINATIONS</p>
         <div className="custom-dropdown">
           <button
@@ -703,9 +720,9 @@ function Navigator() {
             </div>
           )}
         </div>
-      </section>
+      </section>)}
 
-      <section className="section marker-section" ref={markerDropdownRef}>
+      {category('markers', 'SAVED MARKERS', <section className="section marker-section" ref={markerDropdownRef}>
         <p className="eyebrow">SAVED MARKERS</p>
         <div className="custom-dropdown">
           <button
@@ -777,9 +794,9 @@ function Navigator() {
             </div>
           )}
         </div>
-      </section>
+      </section>)}
 
-      <section className="section">
+      {category('quick-actions', 'QUICK ACTIONS', <section className="section">
         <p className="eyebrow">QUICK ACTIONS</p>
         <div className="quick-actions">
           <button onClick={() => { setMode('marker'); if (isDrawer) setDrawerOpen(false); }}>🐟<span>Drop spot</span></button>
@@ -787,23 +804,24 @@ function Navigator() {
           <button className={adjustingPosition ? 'adjusting' : ''} onClick={() => { togglePositionAdjustment(); if (isDrawer) setDrawerOpen(false); }}>⌖<span>Adjust spot</span></button>
         </div>
         <button className={showDepthChart ? 'depth-toggle active' : 'depth-toggle'} onClick={() => setShowDepthChart((visible) => !visible)}>▥ <span>{showDepthChart ? 'Hide depth chart reports' : 'Show depth chart reports'}</span></button>
-      </section>
+      </section>)}
 
-      <section className="section storage-section">
+      {category('storage', 'ROUTE STORAGE', <section className="section storage-section">
         <p className="eyebrow">ROUTE STORAGE</p>
         <div className="storage-actions">
           <button onClick={exportZip}>⇩ Export ZIP</button>
           <button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button>
           <input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden />
         </div>
-      </section>
+      </section>)}
 
       <footer>
         <span>GPS {navigator.geolocation ? 'READY' : 'UNAVAILABLE'}{accuracy ? ` · ±${Math.round(accuracy)}m` : ''}</span>
         <span>{position[0].toFixed(4)}, {Math.abs(position[1]).toFixed(4)}°W</span>
       </footer>
-    </>
-  )
+      </>
+    )
+  }
 
   return <main className="app-shell">
     <aside className="sidebar">
