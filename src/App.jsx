@@ -8,6 +8,24 @@ const DEMO_POSITION = [27.6448, -82.5691]
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(`helm:${key}`)) ?? fallback } catch { return fallback } }
 const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify(value))
+const SHARED_MAP_URL = 'https://hi-art01.github.io/nav-app/'
+
+function encodeShareData(data) {
+  const bytes = new TextEncoder().encode(JSON.stringify(data))
+  let binary = ''
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function readSharedData() {
+  const value = window.location.hash.match(/^#share=([\w-]+)$/)?.[1]
+  if (!value) return null
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)
+    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
+    return JSON.parse(new TextDecoder().decode(bytes))
+  } catch { return null }
+}
 
 /** ArcGIS Maritime Chart Service expects display_params query parameter. */
 function noaaExportDisplayParams(units) {
@@ -46,10 +64,13 @@ function Navigator() {
   const lastTravelPointRef = useRef(null)
   const fileInputRef = useRef(null)
   const relocatingMarkerRef = useRef(false)
+  const markerPlacementRef = useRef(null)
+  const routeBuilderRef = useRef(null)
 
   const [markers, setMarkers] = useState(() => read('markers', []))
   const [destinations, setDestinations] = useState(() => read('destinations', []))
   const [trips, setTrips] = useState(() => read('trips', []))
+  const [markerRoutes, setMarkerRoutes] = useState(() => read('markerRoutes', []))
   const [position, setPosition] = useState(DEMO_POSITION)
   const [accuracy, setAccuracy] = useState(null)
   const [tracking, setTracking] = useState(false)
@@ -71,6 +92,9 @@ function Navigator() {
   const [acquiringGPS, setAcquiringGPS] = useState(false)
   const [destDropdownOpen, setDestDropdownOpen] = useState(false)
   const [markerDropdownOpen, setMarkerDropdownOpen] = useState(false)
+  const [markerPlacement, setMarkerPlacement] = useState(null)
+  const [selectedMarker, setSelectedMarker] = useState(null)
+  const [routeBuilder, setRouteBuilder] = useState(null)
 
   const destDropdownRef = useRef(null)
   const markerDropdownRef = useRef(null)
@@ -95,6 +119,8 @@ function Navigator() {
   useEffect(() => { activeDestinationRef.current = activeDestination }, [activeDestination])
   useEffect(() => { followHeadingRef.current = followHeading; if (!followHeading) gpsHeadingRef.current = false }, [followHeading])
   useEffect(() => { relocatingMarkerRef.current = relocatingMarker }, [relocatingMarker])
+  useEffect(() => { markerPlacementRef.current = markerPlacement }, [markerPlacement])
+  useEffect(() => { routeBuilderRef.current = routeBuilder }, [routeBuilder])
 
   useEffect(() => {
     if (!tracking) return undefined
@@ -111,6 +137,17 @@ function Navigator() {
   useEffect(() => { store('markers', markers) }, [markers])
   useEffect(() => { store('destinations', destinations) }, [destinations])
   useEffect(() => { store('trips', trips) }, [trips])
+  useEffect(() => { store('markerRoutes', markerRoutes) }, [markerRoutes])
+
+  useEffect(() => {
+    const shared = readSharedData()
+    if (!shared || !Array.isArray(shared.markers) || !Array.isArray(shared.destinations) || !Array.isArray(shared.trips)) return
+    setMarkers(shared.markers)
+    setDestinations(shared.destinations)
+    setTrips(shared.trips)
+    setMarkerRoutes(Array.isArray(shared.markerRoutes) ? shared.markerRoutes : [])
+    setNotice('Shared navigation loaded')
+  }, [])
 
   useEffect(() => {
     const setup = () => {
@@ -134,6 +171,14 @@ function Navigator() {
           relocatingMarkerRef.current = false
           setRelocatingMarker(false)
           setNotice('New location selected — save to confirm')
+          return
+        }
+        if (markerPlacementRef.current === 'map') {
+          setDraft((current) => ({ ...current, coords: [event.latlng.lat, event.latlng.lng] }))
+          markerPlacementRef.current = null
+          setMarkerPlacement(null)
+          setMode('marker')
+          setNotice('Location selected — save the marker to confirm')
           return
         }
         if (!modeRef.current) return
@@ -275,7 +320,21 @@ function Navigator() {
     markers.forEach((marker) => {
       const emoji = marker.type === 'Lobster pot' ? '⚓' : marker.type === 'Hazard' ? '⚠️' : marker.type === 'Anchor point' ? '⚓' : '🐟'
       const icon = L.divIcon({ className: 'map-pin', html: `<span>${emoji}</span>` })
-      layers.current.push(L.marker(marker.coords, { icon }).bindPopup(`<b>${marker.name}</b><br>${marker.type}${marker.depth ? `<br>${marker.depth} ft` : ''}`).addTo(map.current))
+      const markerLayer = L.marker(marker.coords, { icon }).bindPopup(`<b>${marker.name}</b><br>${marker.type}${marker.depth ? `<br>${marker.depth} ft` : ''}`).addTo(map.current)
+      markerLayer.on('click', () => {
+        const builder = routeBuilderRef.current
+        if (builder) {
+          if (!builder.markerIds.includes(marker.id)) {
+            const next = { ...builder, markerIds: [...builder.markerIds, marker.id], points: [...builder.points, marker.coords] }
+            setRouteBuilder(next)
+            routeBuilderRef.current = next
+            setNotice(`${marker.name} added to route`)
+          }
+        } else {
+          setSelectedMarker(marker)
+        }
+      })
+      layers.current.push(markerLayer)
     })
     destinations.forEach((destination) => {
       const icon = L.divIcon({ className: 'destination-pin', html: '◆' })
@@ -288,7 +347,11 @@ function Navigator() {
         layers.current.push(L.polyline(points, { pane: 'routesPane', color: activeDestination ? '#37d4b4' : '#79a8ff', weight: activeDestination ? 6 : 4, opacity: activeDestination ? .95 : .85, lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
       }
     })
-  }, [markers, destinations, trips, activeDestination, mapReady])
+    markerRoutes.forEach((route) => {
+      if (route.points?.length > 1) layers.current.push(L.polyline(route.points, { pane: 'routesPane', color: '#f3a45d', weight: 5, opacity: .9, dashArray: '8 8', lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
+    })
+    if (routeBuilder?.points?.length > 1) layers.current.push(L.polyline(routeBuilder.points, { pane: 'routesPane', color: '#ffe08a', weight: 5, opacity: .95, dashArray: '5 7', lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
+  }, [markers, destinations, trips, markerRoutes, activeDestination, routeBuilder, mapReady])
 
   // Update boat SVG icon whenever heading changes
   useEffect(() => {
@@ -470,9 +533,43 @@ function Navigator() {
     setMarkers((list) => list.filter((item) => item.id !== id)); setNotice('Marker deleted')
   }
 
+  function startMarkerPlacement(kind) {
+    if (kind === 'map') {
+      markerPlacementRef.current = 'map'
+      setMarkerPlacement('map')
+      setMode(null)
+      setNotice('Tap the chart to choose the marker location')
+    } else {
+      markerPlacementRef.current = null
+      setMarkerPlacement(null)
+      setDraft((current) => ({ ...current, coords: null }))
+      setMode('marker')
+    }
+  }
+
+  function startMarkerRoute() {
+    if (!selectedMarker) return
+    const next = { markerIds: [selectedMarker.id], points: [selectedMarker.coords] }
+    routeBuilderRef.current = next
+    setRouteBuilder(next)
+    setSelectedMarker(null)
+    setNotice(`Route started at ${selectedMarker.name} — click more markers`)
+  }
+
+  function finishMarkerRoute() {
+    const builder = routeBuilderRef.current
+    if (!builder) return
+    if (builder.points.length > 1) {
+      setMarkerRoutes((routes) => [...routes, { id: uid(), ...builder, createdAt: Date.now() }])
+      setNotice('Marker route saved')
+    } else setNotice('Add at least one more marker to save this route')
+    routeBuilderRef.current = null
+    setRouteBuilder(null)
+  }
+
   async function exportZip() {
     const zip = new JSZip()
-    zip.file('helm-navigation.json', JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), markers, destinations, trips }, null, 2))
+    zip.file('helm-navigation.json', JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), markers, destinations, trips, markerRoutes }, null, 2))
     const blob = await zip.generateAsync({ type: 'blob' })
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `helm-navigation-${new Date().toISOString().slice(0, 10)}.zip`; link.click(); URL.revokeObjectURL(link.href)
     setNotice('Navigation backup exported')
@@ -488,7 +585,7 @@ function Navigator() {
       if (!jsonFile) throw new Error('This ZIP does not contain Helm navigation data.')
       const data = JSON.parse(await jsonFile.async('string'))
       if (!Array.isArray(data.markers) || !Array.isArray(data.destinations) || !Array.isArray(data.trips)) throw new Error('Invalid Helm navigation backup.')
-      setMarkers(data.markers); setDestinations(data.destinations); setTrips(data.trips); activeDestinationRef.current = null; setActiveDestination(null); setNotice('Navigation backup imported')
+      setMarkers(data.markers); setDestinations(data.destinations); setTrips(data.trips); setMarkerRoutes(Array.isArray(data.markerRoutes) ? data.markerRoutes : []); activeDestinationRef.current = null; setActiveDestination(null); setNotice('Navigation backup imported')
     } catch (error) { setNotice(error.message || 'Could not import that ZIP') }
   }
 
@@ -500,7 +597,10 @@ function Navigator() {
 
   function savePoint() {
     if (!draft.name.trim()) { setNotice('Give this location a name'); return }
-    const coords = draft.coords || position
+    const coords = draft.coords ? [Number(draft.coords[0]), Number(draft.coords[1])] : position
+    if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1]) || coords[0] < -90 || coords[0] > 90 || coords[1] < -180 || coords[1] > 180) {
+      setNotice('Enter valid latitude and longitude'); return
+    }
     if (mode === 'destination') {
       const item = { id: uid(), name: draft.name.trim(), coords }
       setDestinations((list) => [...list, item]); activeDestinationRef.current = item.id; setActiveDestination(item.id); setNotice(`${item.name} is ready for a trip`)
@@ -578,6 +678,18 @@ function Navigator() {
     // touch browsers than relying on pointerup to open the drawer.
     fabDragRef.current.suppressClick = fabDragRef.current.moved
     fabDragRef.current.isDragging = false
+  }
+
+  function shareNavigation() {
+    const payload = { version: 2, markers, destinations, trips, markerRoutes }
+    const url = `${SHARED_MAP_URL}#share=${encodeShareData(payload)}`
+    const copyPromise = navigator.clipboard?.writeText(url)
+    if (copyPromise) copyPromise.then(
+      () => setNotice('Share link copied — text it to someone'),
+      () => setNotice('Share link ready — copy it from the address bar')
+    )
+    else setNotice('Share link ready — copy it from the address bar')
+    return url
   }
 
   function handleFabClick() {
@@ -813,6 +925,7 @@ function Navigator() {
           <button onClick={() => fileInputRef.current?.click()}>⇧ Import ZIP</button>
           <input ref={fileInputRef} type="file" accept=".zip,application/zip" onChange={importZip} hidden />
         </div>
+        <button className="share-button" onClick={shareNavigation}>↗ Copy share link</button>
       </section>)}
 
       <footer>
@@ -856,7 +969,7 @@ function Navigator() {
       <div
         ref={mapNode}
         style={{ '--map-rotation': followHeading ? `${-heading}deg` : '0deg' }}
-        className={`${mode || relocatingMarker ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}
+        className={`${mode || relocatingMarker || markerPlacement ? 'map picking' : 'map'}${followHeading ? ' heading-active' : ''}`}
       ></div>
 
       <div className="map-top">
@@ -915,6 +1028,21 @@ function Navigator() {
         </div>
       )}
 
+      {selectedMarker && !routeBuilder && (
+        <div className="route-start-banner">
+          <span>📍 {selectedMarker.name} selected</span>
+          <button type="button" onClick={startMarkerRoute}>Create route</button>
+          <button type="button" aria-label="Clear selected marker" onClick={() => setSelectedMarker(null)}>×</button>
+        </div>
+      )}
+      {routeBuilder && (
+        <div className="route-builder-banner">
+          <span>↗ Route: {routeBuilder.markerIds.length} marker{routeBuilder.markerIds.length === 1 ? '' : 's'} — click another marker</span>
+          <button type="button" onClick={finishMarkerRoute}>Save route</button>
+          <button type="button" aria-label="Cancel route creation" onClick={() => { routeBuilderRef.current = null; setRouteBuilder(null); setNotice('Route creation cancelled') }}>×</button>
+        </div>
+      )}
+
       {/* Sounding key shown when nautical chart is active */}
         {mapStyle === 'nautical' && (
         <div className="depth-legend-cmap">
@@ -938,7 +1066,7 @@ function Navigator() {
     </section>
 
     {/* New marker / destination modal */}
-    {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location — or click the chart to choose one.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
+    {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location unless you choose another mode.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><div className="placement-actions"><button type="button" onClick={() => startMarkerPlacement('current')}>Use my location</button><button type="button" onClick={() => startMarkerPlacement('map')}>Pick on chart</button><button type="button" className={markerPlacement === 'coords' ? 'active' : ''} onClick={() => setMarkerPlacement('coords')}>Enter coordinates</button></div>{markerPlacement === 'coords' && <div className="coordinate-fields"><label>Latitude<input type="number" step="any" value={draft.coords?.[0] ?? ''} onChange={(e) => setDraft({ ...draft, coords: [e.target.value, draft.coords?.[1] ?? ''] })} placeholder="e.g. 27.6448" /></label><label>Longitude<input type="number" step="any" value={draft.coords?.[1] ?? ''} onChange={(e) => setDraft({ ...draft, coords: [draft.coords?.[0] ?? '', e.target.value] })} placeholder="e.g. -82.5691" /></label></div>}<label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
 
     {/* Edit existing marker modal */}
     {editingMarker && !relocatingMarker && (
