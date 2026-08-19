@@ -200,8 +200,11 @@
 /* ── Mobile Layout (Full-Screen Chart) ──────────────────────────────────── */
 @media (max-width: 768px) {
   .utility-drawer {
-    width: min(340px, 88vw);
-    padding: 16px 16px 18px;
+    width: min(290px, 78vw);
+    padding: 14px 14px 16px;
+  }
+  .drawer-backdrop {
+    background: rgba(2, 18, 20, 0.48);
   }
   .app-shell {
     display: block;
