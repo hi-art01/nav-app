@@ -11,9 +11,8 @@ const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify
 const SHARED_MAP_URL = 'https://hi-art01.github.io/nav-app/'
 
 function encodeShareData(data) {
-  const bytes = new TextEncoder().encode(JSON.stringify(data))
-  let binary = ''
-  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  const encoded = encodeURIComponent(JSON.stringify(data))
+  const binary = encoded.replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
@@ -22,8 +21,8 @@ function readSharedData() {
   if (!value) return null
   try {
     const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)
-    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
-    return JSON.parse(new TextDecoder().decode(bytes))
+    const percentEncoded = Array.from(atob(padded), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`).join('')
+    return JSON.parse(decodeURIComponent(percentEncoded))
   } catch { return null }
 }
 
