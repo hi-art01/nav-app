@@ -10,18 +10,32 @@ const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(`
 const store = (key, value) => localStorage.setItem(`helm:${key}`, JSON.stringify(value))
 const SHARED_MAP_URL = 'https://hi-art01.github.io/nav-app/'
 
-function encodeShareData(data) {
-  const encoded = encodeURIComponent(JSON.stringify(data))
-  const binary = encoded.replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+function toBase64Url(base64) {
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function readSharedData() {
+function fromBase64Url(value) {
+  return value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)
+}
+
+async function encodeShareData(data) {
+  const zip = new JSZip()
+  zip.file('helm-share.json', JSON.stringify(data))
+  return `z${toBase64Url(await zip.generateAsync({ type: 'base64', compression: 'DEFLATE', compressionOptions: { level: 9 } }))}`
+}
+
+async function readSharedData() {
   const value = window.location.hash.match(/^#share=([\w-]+)$/)?.[1]
   if (!value) return null
   try {
-    const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)
-    const percentEncoded = Array.from(atob(padded), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`).join('')
+    if (value.startsWith('z')) {
+      const zip = await JSZip.loadAsync(fromBase64Url(value.slice(1)), { base64: true })
+      const dataFile = zip.file('helm-share.json')
+      if (!dataFile) return null
+      return JSON.parse(await dataFile.async('string'))
+    }
+    // Read share links made by the earlier version of the app as well.
+    const percentEncoded = Array.from(atob(fromBase64Url(value)), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`).join('')
     return JSON.parse(decodeURIComponent(percentEncoded))
   } catch { return null }
 }
@@ -94,6 +108,7 @@ function Navigator() {
   const [markerPlacement, setMarkerPlacement] = useState(null)
   const [selectedMarker, setSelectedMarker] = useState(null)
   const [routeBuilder, setRouteBuilder] = useState(null)
+  const [shareUrl, setShareUrl] = useState(null)
 
   const destDropdownRef = useRef(null)
   const markerDropdownRef = useRef(null)
@@ -139,13 +154,16 @@ function Navigator() {
   useEffect(() => { store('markerRoutes', markerRoutes) }, [markerRoutes])
 
   useEffect(() => {
-    const shared = readSharedData()
-    if (!shared || !Array.isArray(shared.markers) || !Array.isArray(shared.destinations) || !Array.isArray(shared.trips)) return
-    setMarkers(shared.markers)
-    setDestinations(shared.destinations)
-    setTrips(shared.trips)
-    setMarkerRoutes(Array.isArray(shared.markerRoutes) ? shared.markerRoutes : [])
-    setNotice('Shared navigation loaded')
+    let cancelled = false
+    readSharedData().then((shared) => {
+      if (cancelled || !shared || !Array.isArray(shared.markers) || !Array.isArray(shared.destinations) || !Array.isArray(shared.trips)) return
+      setMarkers(shared.markers)
+      setDestinations(shared.destinations)
+      setTrips(shared.trips)
+      setMarkerRoutes(Array.isArray(shared.markerRoutes) ? shared.markerRoutes : [])
+      setNotice('Shared navigation loaded')
+    })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -529,7 +547,15 @@ function Navigator() {
   function deleteMarker(id) {
     const marker = markers.find((item) => item.id === id)
     if (!marker || !window.confirm(`Delete "${marker.name}"?`)) return
-    setMarkers((list) => list.filter((item) => item.id !== id)); setNotice('Marker deleted')
+    const removedRouteCount = markerRoutes.filter((route) => route.markerIds?.includes(id)).length
+    setMarkers((list) => list.filter((item) => item.id !== id))
+    setMarkerRoutes((routes) => routes.filter((route) => !route.markerIds?.includes(id)))
+    if (routeBuilderRef.current?.markerIds.includes(id)) {
+      routeBuilderRef.current = null
+      setRouteBuilder(null)
+    }
+    if (selectedMarker?.id === id) setSelectedMarker(null)
+    setNotice(removedRouteCount ? `Marker and ${removedRouteCount} connected route${removedRouteCount === 1 ? '' : 's'} deleted` : 'Marker deleted')
   }
 
   function startMarkerPlacement(kind) {
@@ -679,15 +705,26 @@ function Navigator() {
     fabDragRef.current.isDragging = false
   }
 
-  function shareNavigation() {
+  async function shareNavigation() {
     const payload = { version: 2, markers, destinations, trips, markerRoutes }
-    const url = `${SHARED_MAP_URL}#share=${encodeShareData(payload)}`
-    const copyPromise = navigator.clipboard?.writeText(url)
-    if (copyPromise) copyPromise.then(
-      () => setNotice('Share link copied — text it to someone'),
-      () => setNotice('Share link ready — copy it from the address bar')
-    )
-    else setNotice('Share link ready — copy it from the address bar')
+    const url = `${SHARED_MAP_URL}#share=${await encodeShareData(payload)}`
+    const shareData = { title: 'HELM navigation map', text: 'Open my shared HELM navigation map.', url }
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+        setNotice('Shared navigation map')
+        return url
+      } catch (error) {
+        if (error?.name === 'AbortError') { setNotice('Sharing cancelled'); return url }
+      }
+    }
+    try {
+      await navigator.clipboard?.writeText(url)
+      setNotice('Share link copied — paste it into a text')
+    } catch {
+      setShareUrl(url)
+      setNotice('Copy the link below and send it by text')
+    }
     return url
   }
 
@@ -1066,6 +1103,8 @@ function Navigator() {
 
     {/* New marker / destination modal */}
     {mode && <div className="modal-backdrop"><form className="modal" onSubmit={(e) => { e.preventDefault(); savePoint() }}><button type="button" className="close" onClick={() => setMode(null)}>×</button><p className="eyebrow">{mode === 'destination' ? 'NEW DESTINATION' : 'NEW MARKER'}</p><h2>{mode === 'destination' ? 'Where are you going?' : 'Mark this water'}</h2><p className="subtle">{draft.coords ? 'Location selected on the chart' : 'Uses your current location unless you choose another mode.'}</p><label>Name<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={mode === 'destination' ? 'e.g. North Channel' : 'e.g. Productive reef'} /></label>{mode === 'marker' && <><div className="placement-actions"><button type="button" onClick={() => startMarkerPlacement('current')}>Use my location</button><button type="button" onClick={() => startMarkerPlacement('map')}>Pick on chart</button><button type="button" className={markerPlacement === 'coords' ? 'active' : ''} onClick={() => setMarkerPlacement('coords')}>Enter coordinates</button></div>{markerPlacement === 'coords' && <div className="coordinate-fields"><label>Latitude<input type="number" step="any" value={draft.coords?.[0] ?? ''} onChange={(e) => setDraft({ ...draft, coords: [e.target.value, draft.coords?.[1] ?? ''] })} placeholder="e.g. 27.6448" /></label><label>Longitude<input type="number" step="any" value={draft.coords?.[1] ?? ''} onChange={(e) => setDraft({ ...draft, coords: [draft.coords?.[0] ?? '', e.target.value] })} placeholder="e.g. -82.5691" /></label></div>}<label>Marker type<select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option>Fish spot</option><option>Lobster pot</option><option>Hazard</option><option>Anchor point</option></select></label><label>Depth (feet)<input type="number" min="0" value={depth} onChange={(e) => setDepth(e.target.value)} placeholder="Optional" /></label></>}<button className="primary" type="submit">Save {mode === 'destination' ? 'destination' : 'marker'}</button></form></div>}
+
+    {shareUrl && <div className="modal-backdrop"><div className="modal share-modal"><button type="button" className="close" onClick={() => setShareUrl(null)}>×</button><p className="eyebrow">SHARE NAVIGATION MAP</p><h2>Send this link</h2><p className="subtle">Select and copy this link, then paste it into a text message.</p><textarea readOnly value={shareUrl} onFocus={(event) => event.currentTarget.select()} aria-label="Share link" /><button className="primary" type="button" onClick={async () => { try { await navigator.clipboard.writeText(shareUrl); setNotice('Share link copied'); setShareUrl(null) } catch { setNotice('Select the link and copy it manually') } }}>Copy link</button></div></div>}
 
     {/* Edit existing marker modal */}
     {editingMarker && !relocatingMarker && (
