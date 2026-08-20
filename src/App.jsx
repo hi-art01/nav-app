@@ -108,6 +108,7 @@ function Navigator() {
   const [markerPlacement, setMarkerPlacement] = useState(null)
   const [selectedMarker, setSelectedMarker] = useState(null)
   const [routeBuilder, setRouteBuilder] = useState(null)
+  const [selectedMarkerRoute, setSelectedMarkerRoute] = useState(null)
   const [shareUrl, setShareUrl] = useState(null)
 
   const destDropdownRef = useRef(null)
@@ -365,10 +366,15 @@ function Navigator() {
       }
     })
     markerRoutes.forEach((route) => {
-      if (route.points?.length > 1) layers.current.push(L.polyline(route.points, { pane: 'routesPane', color: '#f3a45d', weight: 5, opacity: .9, dashArray: '8 8', lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
+      if (route.points?.length > 1) {
+        const selected = selectedMarkerRoute?.id === route.id
+        const routeLayer = L.polyline(route.points, { pane: 'routesPane', color: selected ? '#ffe08a' : '#f3a45d', weight: selected ? 7 : 5, opacity: .95, dashArray: '8 8', lineCap: 'round', lineJoin: 'round' }).addTo(map.current)
+        routeLayer.on('click', () => setSelectedMarkerRoute(route))
+        layers.current.push(routeLayer)
+      }
     })
     if (routeBuilder?.points?.length > 1) layers.current.push(L.polyline(routeBuilder.points, { pane: 'routesPane', color: '#ffe08a', weight: 5, opacity: .95, dashArray: '5 7', lineCap: 'round', lineJoin: 'round' }).addTo(map.current))
-  }, [markers, destinations, trips, markerRoutes, activeDestination, routeBuilder, mapReady])
+  }, [markers, destinations, trips, markerRoutes, activeDestination, routeBuilder, selectedMarkerRoute, mapReady])
 
   // Update boat SVG icon whenever heading changes
   useEffect(() => {
@@ -555,7 +561,16 @@ function Navigator() {
       setRouteBuilder(null)
     }
     if (selectedMarker?.id === id) setSelectedMarker(null)
+    if (selectedMarkerRoute?.markerIds.includes(id)) setSelectedMarkerRoute(null)
     setNotice(removedRouteCount ? `Marker and ${removedRouteCount} connected route${removedRouteCount === 1 ? '' : 's'} deleted` : 'Marker deleted')
+  }
+
+  function deleteMarkerRoute(id) {
+    const route = markerRoutes.find((item) => item.id === id)
+    if (!route || !window.confirm('Delete this marker route?')) return
+    setMarkerRoutes((routes) => routes.filter((item) => item.id !== id))
+    setSelectedMarkerRoute(null)
+    setNotice('Marker route deleted')
   }
 
   function startMarkerPlacement(kind) {
@@ -1076,6 +1091,13 @@ function Navigator() {
           <span>↗ Route: {routeBuilder.markerIds.length} marker{routeBuilder.markerIds.length === 1 ? '' : 's'} — click another marker</span>
           <button type="button" onClick={finishMarkerRoute}>Save route</button>
           <button type="button" aria-label="Cancel route creation" onClick={() => { routeBuilderRef.current = null; setRouteBuilder(null); setNotice('Route creation cancelled') }}>×</button>
+        </div>
+      )}
+      {selectedMarkerRoute && !routeBuilder && (
+        <div className="route-delete-banner">
+          <span>↗ Marker route selected</span>
+          <button type="button" onClick={() => deleteMarkerRoute(selectedMarkerRoute.id)}>Delete route</button>
+          <button type="button" aria-label="Clear selected route" onClick={() => setSelectedMarkerRoute(null)}>×</button>
         </div>
       )}
 
